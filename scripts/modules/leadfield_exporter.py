@@ -23,7 +23,7 @@ class LeadFieldExporter:
         """
         Helper method to open ANSYS an initialize the Maxwell3D object.
         Usually not called explicitly, but can be if multiple operations are to be done
-        in a loop, for example.
+        in a loop, for example. Note: version must match the installed ANSYS version.
         """
         self.desktop = Desktop(specified_version="2021.1", non_graphical=True, new_desktop_session=True, close_on_exit=True, student_version=False)
         self.m3d = Maxwell3d(projectname=ansys_project_path, close_on_exit=True)
