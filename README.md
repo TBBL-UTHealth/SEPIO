@@ -12,3 +12,4 @@ Code repo for a publication on SEPIO (Sparse electrode placement for optimized i
 
 ## Scripts
 Script names are prefixed with their order of use for generating data found in the publication and explained in the diagram below.
+![Readme drawio](https://github.com/user-attachments/assets/6171a5c6-6494-4045-89e2-f974205b3a68)
