@@ -1,5 +1,5 @@
 # SEPIO
-Code repo for a publication on SEPIO (Sparse electrode placement for optimized input-output)
+Code repo for a publication on "Optimization of electrode placement and information capacity for local field potentials in cortex".
 
 ## Features
 
