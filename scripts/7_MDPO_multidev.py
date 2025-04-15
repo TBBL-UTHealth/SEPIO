@@ -3,6 +3,8 @@
 This script is designed to optimize the placement of multiple devices in a given brain region.
 Accepts N-devices of M-types for broader application and UI integration.
 Requires input data from Brainsuite and leadfield files - provided in the data folder.
+
+Adjustable variables end at line 103.
 """
 
 ##### Imports and Files #####
@@ -21,21 +23,19 @@ from scipy.io import loadmat
 
 ##### Device Settings #####
 # Files and details
-#folder = r"C:\Users\SeymourLab\Documents\Jace\MDPO"
-folder = r"C:\Users\SeymourLab-Huxley\Documents\Jace\MDPO"
-#folder = r"C:\Users\SeymourLab-Huxley\Documents\Jace\IITK"
+folder = r"...\SEPIO_dataset" # Point to data folder
 
 # Source space derived from MRI; any number of ROI files in list
-roi_data = [loadmat(path.join(folder,'auditory_roi.mat'))]
-brain_data = [loadmat(path.join(folder,'brain.mat'))]
+roi_data = [loadmat(path.join(folder,'MDPO_data','auditory_roi.mat'))]
+brain_data = [loadmat(path.join(folder,'MDPO_data','brain.mat'))]
 roi_weights = [1.] # Weights for ROI regions; len(roi_data) == len(roi_weights)
 
 # Provide a different list entry for each different device type used
 device_types = ['intracortical']  # Options: ['intracortical', 'surface']; format as Python list
 device_names = ['SEEG'] # Device names for specific processes; unique processes must be added for each
-fields_files = [#path.join(folder,"DISC_30mm_p2-5Sm_MacChr-meta.npz")]#, # Point to leadfield files
-                path.join(folder,"SEEG_8e_500um_1500pitch.npz")]#,
-                #path.join(folder,"ECoG_1mm_500umgrid.npz")]
+fields_files = [#path.join(folder,'leadfields','DISC_30mm_p2-5Sm_MacChr-meta.npz')]#, # Point to leadfield files
+                path.join(folder,'leadfields','SEEG_8e_500um_1500pitch.npz')]#,
+                #path.join(folder,'leadfields','ECoG_1mm_500umgrid.npz')]
 
 # Settings for each device; corresponding list elements
 N_multi = [1] # number of each device; assumes the same settings for multiples unless assigned separately
@@ -94,7 +94,7 @@ measure = 'ic' # factor to output and train on; 'voltage', 'snr', or 'ic' ONLY
 num_generations = 30 # Total generation cycles; 50 is often sufficient up to ~5 devices
 num_parents_mating = 15 # Top number kept from population between generations; 20
 sol_per_pop = 44 # Population per generation; 50
-process_count = 30 # Parallel processing count; !!!!! System dependent !!!!! (30 on Hodgkin/Huxley)
+process_count = 30 # Parallel processing count; !!!!! System dependent !!!!! (30)
 ss_gens = 3 # number of steady state generations; Disturbs state after this; 5 or 1/10 of generations
 # Anneal general
 anneal_iterations = 35 # Number of stochastic test steps per temp
@@ -103,6 +103,8 @@ anneal_ftemp = 1e-3 # Stopping temp
 anneal_cooling_rate = 0.6 # Exponentiated to reduce itemp; 0.5-0.99
 anneal_cart_step = 15 # Initial/max cartesian step size
 anneal_rot_step = np.pi/3 # Initial/max rotational step size
+
+
 
 ### Variable processes
 # Reassign measure to select the correct value output from 'calculate_voltage' function; acts as index later
@@ -1044,7 +1046,6 @@ if __name__ == "__main__":
             on_generation=on_gen,
             save_best_solutions=False,
             keep_elitism=1,
-            delay_after_gen=0.0,
             parallel_processing=['process', process_count])
         
         # Run GA model
@@ -1064,7 +1065,7 @@ if __name__ == "__main__":
         print("Fitnesses over generations:", fitnesses)
 
         t_save = time.strftime('%Y%m%d_%H%M', start_time.timetuple())
-        with open(path.join(folder,'out',f'{t_save}-genetic-{N}.pkl'), 'wb') as file:
+        with open(path.join(folder,'outputs',f'{t_save}-genetic-{N}.pkl'), 'wb') as file:
             pickle.dump({
                 'type':[f'{method}'],
                 'best solution:': best_solution,
@@ -1127,7 +1128,7 @@ if __name__ == "__main__":
         print(f"Total computation time: {total_time}")
 
         t_save = time.strftime('%Y%m%d_%H%M', start_time.timetuple())
-        with open(path.join(folder,'out',f'{t_save}-anneal-{N}.pkl'), 'wb') as file:
+        with open(path.join(folder,'outputs',f'{t_save}-anneal-{N}.pkl'), 'wb') as file:
             pickle.dump({
                 'type':[f'{method}'],
                 'best solution:': best_sol,

@@ -13,6 +13,10 @@ UI inputs:
 - Select Voltage, SNR, Information Capacity, or Angle
 - Color scheme selection
 - Device position values as provided by MDPO_optimize or read out from MDPO_assess
+
+Demo:
+To explore the utility of this UI, set the displayed value to 'Angle', clear any devices entered, 
+and visualize with different settings to observe the cortex angle relative to scalp.
 """
 ### Imports and Files ###
 import tkinter as tk
@@ -35,16 +39,18 @@ from modules.leadfield_importer import FieldImporter
 ### SELECT lead field files
 # Currently only supports one device type at a time
 device = 'SEEG'  # Options: {'DISC', 'IMEC', 'SEEG'}
-#folder = r"C:\Users\SeymourLab-Huxley\Documents\Jace\IITK" # AAC
-folder = r"C:\Users\SeymourLab-Huxley\Documents\Jace\MDPO" # Auditory
-fields_file = path.join(folder, 'SEEG_8e_500um_1500pitch.npz')
-# Save folder
-savedir = path.join(folder,"out")
+folder = r"...\SEPIO_dataset"
+fields_file = path.join(folder,'leadfields', 'SEEG_8e_500um_1500pitch.npz')
+#fields_file = path.join(folder,'leadfields', 'DISC_30mm_p2-5Sm_MacChr.npz')
+#fields_file = path.join(folder,'leadfields', 'ECoG_1mm_500umgrid.npz')
+
+# Save folder; Screenshots not implemented
+output = path.join(folder,"outputs")
 
 # Source space derived from MRI; any number of ROI files in list
 # Auditory
-roi_data = [loadmat(path.join(folder,'auditory_roi.mat'))]
-brain_data = [loadmat(path.join(folder,'brain.mat'))]
+roi_data = [loadmat(path.join(folder,'MDPO_data','auditory_roi.mat'))]
+brain_data = [loadmat(path.join(folder,'MDPO_data','brain.mat'))]
 
 roi_weights = [1.] # Weights for ROI regions; len(roi_data) == len(roi_weights); ACC-dlPFC [1.,.5,.5]
 roi_include = [True] # Bool; should ROI be included when viewing whole brain
