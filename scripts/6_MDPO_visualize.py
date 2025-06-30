@@ -29,12 +29,13 @@ import open3d as o3d
 from scipy.io import loadmat
 from os import path
 import sys, os
+
+# Set up paths for module imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.abspath(current_dir))
 grandparent_dir = os.path.dirname(os.path.abspath(parent_dir))
 sys.path.insert(0, grandparent_dir)
 from modules.leadfield_importer import FieldImporter
-
 
 ### SELECT lead field files
 # Currently only supports one device type at a time
@@ -49,9 +50,11 @@ output = path.join(folder,"outputs")
 
 # Source space derived from MRI; any number of ROI files in list
 # Auditory
-roi_data = [loadmat(path.join(folder,'MDPO_data','auditory_roi.mat'))]
+roi_data = [loadmat(path.join(folder,'MDPO_data','r_broca.mat'))]
 brain_data = [loadmat(path.join(folder,'MDPO_data','brain.mat'))]
 
+brain_name = 'brain' # references file header; ans, brain
+roi_name = ['ans'] # references files header; ans, auditory_roi, left_oper, left_tris
 roi_weights = [1.] # Weights for ROI regions; len(roi_data) == len(roi_weights); ACC-dlPFC [1.,.5,.5]
 roi_include = [True] # Bool; should ROI be included when viewing whole brain
 do_weights = False # Bool
@@ -62,20 +65,17 @@ field_importer = FieldImporter()
 field = field_importer.load(fields_file)
 num_electrodes = np.shape(field_importer.fields)[4]
 fields = field_importer.fields
-scale = 0.5 # mm; voxel size
+scale = 0.5 # mm; voxel size; provided lead fields are 0.5 mm/voxel unless stated in file name
 cl_wd = 1.0 # mm diameter to clear; device may be slightly offset
 
-# Define tissues and dipoles
-brain_name = 'brain' # references file header; ans, brain
-roi_name = 'auditory_roi' # references files header; ans, auditory_roi, left_oper, left_tri
+# Define tissues dipoles
 # Magnitude is 0.5e-9 (nAm) for real signals or 20e-9 (nAm) for phantom simulations
 magnitude = 0.5e-9 # nAm
 dipole_offset = 1.25 # Placement of dipole between gray/white interface (0) and gray/pial interface (1); est. from Palomero-Gallagher and Zilles 2019
 cortical_thickness = 2.5 # Estimate from Fischl and Dale 2000; used for cortex inflation
-disc_noise = 4.1 # uV rms; typically 4.1 uV
-seeg_noise = 2.7 # uV rms; typically 2.7 uV
+noise = 2.7 # uV rms; typicall 2.7 uV for standard SEEG or 4.1 uV for standard DiSc
 
-bandwidth = 100 # S/s
+bandwidth = 100 # S/s; May differ between devices depending on backend recording system
 
 ### Place devices and transform vector space for each
 # Produces dippos and dipvec for calculating voltages
@@ -99,7 +99,6 @@ midpoint = fields.shape[0]//2  # field midpoint index
 
 
 def obtain_data(data, name):
-    
     """
     Extract data from a given file
     
@@ -116,19 +115,11 @@ def obtain_data(data, name):
     vertices = data[name][0][0][1]
     normals = data[name][0][0][2]
 
-    # printing for sanity check
-    # print(name, "header", type(header), header)
-    # print(name, "faces", type(faces), faces)
-    # print(name, "vertices", type(vertices), vertices)
-    # print(name, "normals", type(normals), normals)
-
     return header, faces, vertices, normals
 
 
 ### Generate arrays from Brainsuite data; MUST be done before later function definitions
-#brain_header, brain_faces, brain_vertices, brain_normals = obtain_data(brain_data, 'ans')
-#roi_header, roi_faces, roi_vertices, roi_normals = obtain_data(roi_data, 'ans')
-# Values to collect
+# The following block loads and merges all brain and ROI mesh data into single arrays for later use.
 brain_vals = []
 brain_vallen = [[],[],[]] # summative index for each start point
 brain_count = [0,0,0] # running index sum
@@ -144,7 +135,7 @@ for i,fb in enumerate(brain_data):
         brain_vallen[k].append(brain_vals[i][k].shape[0] + brain_count[k])
         brain_count[k] += brain_vals[i][k].shape[0]
 for i,fb in enumerate(roi_data):
-    _, roi_faces, roi_vertices, roi_normals = obtain_data(roi_data[i], roi_name)
+    _, roi_faces, roi_vertices, roi_normals = obtain_data(roi_data[i], roi_name[i])
     roi_vals.append([roi_faces,roi_vertices,roi_normals])
     for k in range(3):
         roi_vallen[k].append(roi_vals[i][k].shape[0] + roi_count[k])
@@ -215,7 +206,7 @@ def recenter(vertices, reference):
 
     return vertices_modified
 
-# Recenter
+# Recenter brain and ROI vertices for visualization and calculation
 if recenter_on_brain:
     recentered_brain = recenter(brain_vertices, brain_vertices)
     recentered_roi = recenter(roi_vertices, brain_vertices)
@@ -223,8 +214,7 @@ else:
     recentered_brain = recenter(brain_vertices, roi_vertices)
     recentered_roi = recenter(roi_vertices, roi_vertices)
 
-# Potentially add ROIs into whole brain for centering and visualization
-# Only after recentering so that it is never affected
+# Optionally add ROIs into whole brain for centering and visualization
 if any(roi_include):
     for i in range(len(roi_data)):
         if roi_include[i]:
@@ -262,10 +252,9 @@ def inflate_cortex(vertices,normals,dist):
 
     return inflated
 
-# Generate points at layer 4 for calculation
+# Generate points at layer 4 for calculation and inflated cortex for visualization
 layer4_brain = inflate_cortex(recentered_brain,brain_normals,dipole_offset)
 layer4_roi = inflate_cortex(recentered_roi,roi_normals,dipole_offset)
-# Generate inflated cortex points for visualization
 inflated_brain = inflate_cortex(recentered_brain,brain_normals,cortical_thickness)
 inflated_roi = inflate_cortex(recentered_roi,roi_normals,cortical_thickness)
 
@@ -287,18 +276,12 @@ def transform_vectorspace(vertices, normals, devpos):
     beta = devpos[4]
     gamma = devpos[5]
     
-    # define rotation matrix 
+    # Rotation matrices for yaw, pitch, roll
     yaw = np.array([[np.cos(alpha),-np.sin(alpha),0],[np.sin(alpha),np.cos(alpha),0],[0,0,1]])
     pitch = np.array([[np.cos(beta), 0, np.sin(beta)],[0,1,0],[-np.sin(beta),0,np.cos(beta)]])
     roll = np.array([[1,0,0],[0,np.cos(gamma),-np.sin(gamma)],[0,np.sin(gamma),np.cos(gamma)]])
     rot_mat = np.matmul(yaw, pitch)
     rot_mat = np.matmul(rot_mat, roll)
-
-    #print(rot_mat) # Displays rotation matrix
-
-    ###
-    ##### No transformation done above this line #####
-    ###
 
     dippos = np.copy(vertices)
     dipvec = np.copy(normals)
@@ -309,7 +292,7 @@ def transform_vectorspace(vertices, normals, devpos):
     dippos[1] += fields.shape[1]//2
 
     # rotate vertices and normals based on the placement of the device
-    for idx in range(vertices.shape[0]):   # rotate for each vertex point and corresponding vectors
+    for idx in range(vertices.shape[0]):
         dippos[idx] = np.matmul(dippos[idx], rot_mat)
         dipvec[idx] = np.matmul(dipvec[idx], rot_mat)
 
@@ -324,8 +307,6 @@ def transform_vectorspace(vertices, normals, devpos):
 
     return dippos, dipvec, rot_mat
 
-# dippos, dipvec, rot_mat = transform_vectorspace(recentered_roi, roi_normals, devpos)
-
 def trim_data(leadfield, vertices, normals):
     """
     Set values outside of the leadfield as nan so that it is compatible for further calculation
@@ -336,23 +317,15 @@ def trim_data(leadfield, vertices, normals):
     outputs:
         - trimmed dippos, dipvec
     """
-
     dippos = np.copy(vertices)
     dipvec = np.copy(normals)
-    # half of side length
     len_half = leadfield.shape[0]//2
 
-    # um = 0
     for idx in range(vertices.shape[0]):
         if((np.abs(vertices[idx][0])>len_half) or (np.abs(vertices[idx][1])>len_half) or (vertices[idx][2])>len_half*2) or (vertices[idx][2]<0):
-            # print("yes", um)
-            # um+=1
             dippos[idx] = np.nan
 
     return dippos, dipvec
-
-#trim data
-# dippos_adj, dipvec_adj = trim_data(fields, dippos, dipvec)
 
 def calculate_voltage(fields, vertices, normals, vscale=10**6, montage = False, inter = False):
     """
@@ -393,7 +366,7 @@ def calculate_voltage(fields, vertices, normals, vscale=10**6, montage = False, 
         # elif (not np.all(np.isnan(voltage[idx,:]))) and montage and inter:
 
     opt_volt *= vscale #scale it to get the list of voltages
-    snr_list = np.copy(opt_volt)/seeg_noise # get the list of snr values
+    snr_list = np.copy(opt_volt)/noise # get the list of snr values
     info_cap = bandwidth*np.log2(1+snr_list) # get the list of information capacity
 
     # Scale with given weights for ROI subregions
@@ -428,7 +401,7 @@ def calculate_angle(brainvert,brainvec):
     return angles
 
 
-# list of colors and corresponding values; Used from UI color selector
+# Color definitions for visualization
 color1, color2, color3, color4, color5, color6, color7 = '#6e6e6e', '#A394CC', '#9779EB', '#BB70FF', '#FF70EC', '#FE3023', '#AE0000' # Reds?
 capcol1, capcol2, capcol3, capcol4, capcol5, capcol6, capcol7 = '#6e6e6e', '#CFEFD8', '#9DE4B1', '#73D58F', '#12DFC2', '#00A8E2', '#0839ED' # Blues?
 angcol1, angcol2, angcol3, angcol4, angcol5, angcol6, angcol7 = '#8C8C8C','#C23939', '#B6C238', '#C26138', '#38C256', '#38C0C2', '#3858C2' # Contrast rainbow
@@ -439,25 +412,20 @@ colors = [[color1, color2, color3, color4, color5, color6, color7],
           [mangcol1, mangcol2, mangcol3, mangcol4, mangcol5, mangcol6, mangcol7]]
 
 
-# Predefined voltage values for color plot; To Do - Automate adapting range; Top of range is + out of range
-#val1, val2, val3, val4, val5, val6 = 0.12, 0.45, 1, 3, 10, 15
+# Predefined voltage and attribute bins for color mapping
 val1, val2, val3, val4, val5, val6 = 0.252, 0.533, 1.186, 2.984, 9.85, 61.8 # IC 15, 30, 60, 120, 240, (480 unused) for 2.3 uV RMS noise
 
 def infocap(val):
     """
     Modified bins for sake of visualization
     """
-    return round(bandwidth*np.log2(1+val/seeg_noise))
+    return round(bandwidth*np.log2(1+val/noise))
 
 n_bin = [ # Voltage bins
         [np.nan, val1, val2, val3, val4, val5, val6],
-         # information capacity bins are based on the voltage bins
-         #[np.nan, infocap(val1), infocap(val2), infocap(val3), infocap(val4), infocap(val5), infocap(val6)],
-         [np.nan,15,30,60,120,240,480],
-         # SNR bins
-         [np.nan,val1/seeg_noise,val2/seeg_noise,val3/seeg_noise,val4/seeg_noise,val5/seeg_noise,val6/seeg_noise],
-         # Angle bins
-         [np.nan,30,60,90,120,150,180]#[np.nan,20,40,60,80,100,120]#
+         [np.nan,15,30,60,120,240,480], # Info cap bins
+         [np.nan,val1/noise,val2/noise,val3/noise,val4/noise,val5/noise,val6/noise], # SNR bins
+         [np.nan,30,60,90,120,150,180] # Angle bins
          ] 
 
 def hextorgb(hex):
@@ -468,10 +436,11 @@ def hextorgb(hex):
     rgb = tuple(int(hex[i:i+2], 16)/255 for i in (0, 2, 4))
     return rgb
 
-rgb = [] # Convert hex to RGB
-for idx1 in range(len(colors)): # for each set of colors
+# Convert hex to RGB for Open3D
+rgb = []
+for idx1 in range(len(colors)):
     rgb.append([])
-    for idx2 in range(len(colors[idx1])): # for each color in the set
+    for idx2 in range(len(colors[idx1])):
         rgb[idx1].append(hextorgb(colors[idx1][idx2]))
 
 # Initial values; start with smoothed color
@@ -526,11 +495,10 @@ def get_color_list(data, attri = "Voltage", color = set_color, rgb0 = set_rgb):
 
     return color_list, rgblist
 
-
-
 def legend(attribute):
     """
     To print the legend (because open3d doesn't)
+    Uses matplotlib to display color bins for the selected attribute.
     """
     global colors, n_bin, set_rgb,set_color
 
@@ -557,6 +525,7 @@ def legend(attribute):
     for i in range(len(bin)):
         bin[i] = round(bin[i],decimals)
 
+    # The following block creates the legend for each attribute type
     if attribute=="Info.Cap.":
         # Creating legend with color box 
         range1 = mpatches.Patch(color=color[0], label='nan') 
@@ -613,7 +582,7 @@ root = tk.Tk()
 root.geometry("600x600")
 root.title("Trajectory and Sensor Optimization")
 
-# Preset values
+# Preset values for plotting
 vertices = layer4_roi
 infl_vertices = inflated_roi
 inner_vertices = recentered_roi
@@ -621,6 +590,9 @@ normals = roi_normals
 
 # define a function to assist assigning values to variables
 def change_vertices(button_val):
+    """
+    Switches between ROI and full brain for visualization.
+    """
     global vertices, normals, infl_vertices, inner_vertices
     if button_val == "ROI":
         vertices = layer4_roi
@@ -635,6 +607,9 @@ def change_vertices(button_val):
 
 # Function to assist color selection
 def change_color(color_button):
+    """
+    Switches between color schemes for visualization.
+    """
     global set_color, set_rgb
     if color_button == "Smooth":
         set_color = colors[3]
@@ -646,6 +621,9 @@ def change_color(color_button):
 # Function to load pickle data and update variables for SEPIO results and trajectories
 loaded_pickle = None
 def load_pickle_file():
+    """
+    Loads a pickle file containing device positions or optimization results.
+    """
     global loaded_pickle
     file_path = filedialog.askopenfilename(filetypes=[("Pickle files", "*.pkl"), ("All files", "*.*")])
     if file_path:
@@ -769,7 +747,6 @@ choice_frame.columnconfigure(0, weight=1)
 
 # Function to plot the output after all inputs so that variables appear in order
 def plot_device(vertices, normals, devices, leadfield, attribute, mont = False, inte = False, inflate=False):
-
     """
     Plot vertices and devices using the open3d library for a better view of the 3d space (better rendering)
     Note special case for plotting normal angles at vertices
@@ -864,6 +841,33 @@ def plot_device(vertices, normals, devices, leadfield, attribute, mont = False, 
     rec_mesh.remove_vertices_by_mask(low_density_vertices)
 
     reference = o3d.geometry.TriangleMesh.create_sphere(radius=10.0, resolution=20)
+    
+    # --- OBJ EXPORT ---
+    if save_obj_var.get():
+        import os
+        from datetime import datetime
+        if not os.path.exists(savedir):
+            os.makedirs(savedir)
+        # Get current date and time for filename suffix
+        now = datetime.now()
+        date_str = now.strftime("%Y%m%d_%H%M")
+        # Save reconstructed mesh
+        mesh_path = os.path.join(savedir, f"surface_mesh_{date_str}.obj")
+        o3d.io.write_triangle_mesh(mesh_path, rec_mesh)
+        # Save point cloud as OBJ
+        points_path = os.path.join(savedir, f"surface_points_{date_str}.obj")
+        o3d.io.write_point_cloud(points_path, roi)
+
+        # Save mesh with devices
+        device_meshes = [g for g in geometry if isinstance(g, o3d.geometry.TriangleMesh) and g is not rec_mesh]
+        if device_meshes:
+            # Merge all device meshes with rec_mesh
+            merged_mesh = rec_mesh
+            for dev_mesh in device_meshes:
+                merged_mesh += dev_mesh
+            mesh_with_dev_path = os.path.join(savedir, f"surface_mesh_with_devices_{date_str}.obj")
+            o3d.io.write_triangle_mesh(mesh_with_dev_path, merged_mesh)
+    # --- END OBJ EXPORT ---
 
     geometry.append(roi) # Displays original point cloud
     geometry.append(rec_mesh) # Displays reconstructed surface
@@ -880,14 +884,17 @@ def plot_device(vertices, normals, devices, leadfield, attribute, mont = False, 
 
 # clear all device positions
 def reset_dev():
+    """
+    Clears all device positions from the list.
+    """
     global device_pos
     device_pos=[]
 
 
 def combine_funcs(*funcs): 
-  
-    # this function will call the passed functions 
-    # with the arguments that are passed to the functions 
+    """
+    Utility to combine multiple functions into a single callback.
+    """
     def inner_combined_func(*args, **kwargs): 
         for f in funcs: 
   
@@ -901,6 +908,9 @@ def combine_funcs(*funcs):
 
 # change the device location display
 def change_dev_location():
+    """
+    Updates the label showing current device positions.
+    """
     change = "Current Location: "+str(device_pos)
     current_devices.configure(text=change)
 
@@ -911,6 +921,9 @@ resetting.grid(row=0,column=0)
 
 # Safe float load from entry fields
 def try_float(val):
+    """
+    Attempts to convert a string to float, returns None if invalid.
+    """
     try:
         float_val = float(val)
         return float_val
@@ -919,6 +932,9 @@ def try_float(val):
 
 # add new device position based on the values entered in the window
 def collect_devpos():
+    """
+    Collects device position and orientation from entry fields and appends to device_pos.
+    """
     x = try_float(xpos.get())
     y = try_float(ypos.get())
     z = try_float(zpos.get())
@@ -927,7 +943,6 @@ def collect_devpos():
     g = np.radians(try_float(getgamma.get()))
     global device_pos
     device_pos.append([x,y,z,a,b,g])
-    # print("hi") # Yilan hid this message 
     print(device_pos)
 
 add_device = tk.Button(adding, text = "Add Device", font = ('Futura', 12), \
@@ -936,6 +951,9 @@ add_device.grid(row=0,column=1)
 
 # delete the device last added to the list
 def undo_adding():
+    """
+    Removes the last device position from the list.
+    """
     global device_pos
     if len(device_pos)<=0:
         pass
@@ -963,6 +981,10 @@ montage.pack()
 
 # run the program
 def run_program():
+    """
+    Main callback to generate the visualization map.
+    Checks for device positions and calls legend and plot functions.
+    """
     global vertices, normals, device_pos, fields, variable
     if (len(device_pos)<=0) & (variable.get()!="Angles"):
         messagebox.showerror(title = "Missing Device Position", message = "Please enter device position.")
@@ -973,5 +995,10 @@ def run_program():
 generate_map = tk.Button(root, text = "Generate Map", font = ('Futura', 12), \
                          command=run_program)
 generate_map.pack()
+
+# Add checkbox to toggle OBJ saving
+save_obj_var = tk.IntVar(value=1)  # Default: save OBJ files
+save_obj_checkbox = tk.Checkbutton(root, text="Save OBJ files", variable=save_obj_var, onvalue=1, offvalue=0, font=('Futura', 12))
+save_obj_checkbox.pack(pady=(10,0))
 
 root.mainloop()

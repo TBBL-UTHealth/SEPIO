@@ -44,6 +44,7 @@ class sepio:
         else: # Produce labels if needed
             counts = 1
             y = np.arange(X.shape[0]) # labels
+            print("TEST y:",y.shape,y)
         # Separate test set labels
         if (Xt is not None) and (yt is None):
             yt = np.arange(Xt.shape[0]) # labels
@@ -105,7 +106,7 @@ class sepio:
             if countst is None: # Same test data; no replicates
                 X_test = np.copy(X)
                 y_test = np.copy(y)
-
+        print("TEST y_test:",y_test.shape,y_test)
         #--- Initialize outputs ---#
         # Coefficients for sensor sorting
         if np.unique(y).shape[0] <= 2: # Only 2 labels -> (sensors,)
@@ -118,7 +119,8 @@ class sepio:
         MCaccs = np.zeros((sensor_range.shape[0]))
         # Accuracy in source space
         MCSaccs = np.zeros((np.unique(y).shape[0]))
-
+        # Make stable labels list for MC cycles
+        y_set = np.copy(y)
         #--- Iterate Monte-Carlo ---#
         for i in range(MCcount):
             print("Starting run",i+1,"of",(MCcount))
@@ -131,6 +133,7 @@ class sepio:
             # Overlay noise, shuffle, and train
             X_train = np.copy(X) + np.random.normal(scale=noise,size=X.shape)
             shuf = np.random.permutation(np.array(range(len(y))))
+            y = y_set.copy()
             y = y[shuf]
             X_train = X_train[shuf]
             model.fit(X_train, y)
@@ -139,9 +142,11 @@ class sepio:
             MCcoefs += model.sensor_coef_
 
             #--- Test the model ---#
-            print("Testing model (sensors)...")
+            print("Testing model (SENSORS)...")
             accs = np.zeros(MCaccs.shape)
             k = 0
+            saccs = np.zeros(MCSaccs.shape)
+            n = 0
             for i,s in enumerate(sensor_range):
                 print(f"Testing {s} sensors of {sensor_range}")
                 # Standard dataset sensor selection
@@ -159,6 +164,7 @@ class sepio:
                         # Test and record scores
                         y_pred = model.predict(X_testk[:,sensors])
                         acc = metrics.accuracy_score(y_testk,y_pred)
+                        print(f"Sensor accuracy: {acc}")
                         accs[i] += acc
                         del X_testk # Clear memory
                 else: # No replicates in test set (Simulated)
@@ -166,34 +172,37 @@ class sepio:
                     print(f"Using {subdivs} samples at a time, totalling {subdivs*rep_subdiv} of possible {countst}.")
                     # Shuffle
                     shuf = np.random.permutation(range(len(y_test)))
-                    X_test = X_test[shuf]
-                    y_test = y_test[shuf]
+                    X_testk = np.copy(X_test)[shuf]
+                    y_testk = np.copy(y_test)[shuf]
                     for k in range(subdivs):
                         # Test and record scores
-                        y_pred = model.predict(X_test[rep_subdiv*k:rep_subdiv*(k+1),sensors])
-                        acc = metrics.accuracy_score(y_test,y_pred)
+                        y_pred = model.predict(X_testk[rep_subdiv*k:rep_subdiv*(k+1),sensors])
+                        acc = metrics.accuracy_score(y_testk,y_pred)
+                        print(f"Sensor accuracy: {acc}")
                         accs[i] += acc
                     #k = 0 # Set divisions to 0 if not subdividing
             
-            saccs = np.zeros(MCSaccs.shape)
-            n = 0
+            
             if spatial: # Avoid calc if unneeded as it takes a LONG time
                 # Accuracy spatial per label
-                print("Testing model (sources)...")
-                model.update_sensors(n_sensors=NUM_ELECTRODES, xy=(X_train, y), quiet=True)
+                print("Testing model (SOURCES)...")
+                # Model should still be loaded with the total sensor count
+                #model.update_sensors(n_sensors=NUM_ELECTRODES, xy=(X_train, y), quiet=True)
                 if ((counts == 1) and (countst is None)) or (countst == 1): # replicates used
                     for n in range(replicates//rep_subdiv):
                         # Create replicate
                         X_testk = np.copy(X_test) + np.random.normal(scale=noise,size=X_test.shape)
                         # Shuffle
                         shuf = np.random.permutation(np.array(range(len(y_test))))
-                        X_testk = X_testk[shuf]
-                        y_test = y_test[shuf]
+                        inv_shuf = np.argsort(shuf)
+                        X_testk = X_testk
+                        y_testk = np.copy(y_test)
                         # Test with all sensors and record scores
-                        y_pred = model.predict(X_testk)
-                        for j in range(y_test.shape[0]): # j for each data labels
-                            j_label = np.where(y_test==j)[0]
-                            saccs[j] += metrics.accuracy_score(y_test[j_label],y_pred[j_label])
+                        y_pred = model.predict(X_testk[:,sensors])
+                        for j in range(saccs.shape[0]): # j for each data labels
+                            j_index = np.where(y_testk==j)[0]
+                            saccs[j] += metrics.accuracy_score(y_testk[j_index],y_pred[j_index])
+                    print(f"Spatial accuracy: {np.mean(saccs)/(n+1)}")
                 else: # No replicates for test set
                     pass
             

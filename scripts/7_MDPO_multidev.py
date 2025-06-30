@@ -26,9 +26,10 @@ from scipy.io import loadmat
 folder = r"...\SEPIO_dataset" # Point to data folder
 
 # Source space derived from MRI; any number of ROI files in list
-roi_data = [loadmat(path.join(folder,'MDPO_data','auditory_roi.mat'))]
+roi_data = [loadmat(path.join(folder,'MDPO_data','r_broca.mat'))]
 brain_data = [loadmat(path.join(folder,'MDPO_data','brain.mat'))]
 roi_weights = [1.] # Weights for ROI regions; len(roi_data) == len(roi_weights)
+roi_label = ['ans'] # Dict labels for each ROI; most are 'ans', older may be different
 
 # Provide a different list entry for each different device type used
 device_types = ['intracortical']  # Options: ['intracortical', 'surface']; format as Python list
@@ -116,7 +117,8 @@ elif measure == 'ic':
     measure = 2
 else:
     print("ERROR: Incorrect output 'measure' assignment.")
-# Load lead fields
+
+# Load lead fields for each device type
 field_importer = FieldImporter()
 fields = []
 num_electrodes = []
@@ -128,6 +130,7 @@ for f in fields_files:
     midpoint.append([fields[-1].shape[0]//2,fields[-1].shape[1]//2,fields[-1].shape[2]//2])  # field midpoint index
     if method != 'genetic': # TO DO: Keep genetic from reloading LFs constantly
         print(f"Loaded lead field from {f}")
+
 # Device index list for sorting efforts
 N_index = []
 for i,n in enumerate(N_multi):
@@ -136,12 +139,10 @@ for i,n in enumerate(N_multi):
         N_index.append(i) # add an index for each duplicate device
         k +=1
 
-
-
 ### Device-specific processing
 
 def field_reduce(field,count):
-    # Only if starting with original fields and changing from 128
+    # Reduce number of sensors in leadfield if needed (e.g., DiSc 128->64)
     if field.shape[-1] == 128 and count != 128:
         if count == 64:
             keep = np.arange(0,128,2)
@@ -208,10 +209,8 @@ for i,g in enumerate(grid_positions): # Check each defined device
     if g: # False for singles, list for grids (True)
         fields[i] = build_grid(i)
 
-
 ### Load extracted MRI data
 def obtain_data(data, name):
-    
     """
     Extract data from a given file
     
@@ -231,7 +230,7 @@ def obtain_data(data, name):
     return header, faces, vertices, normals
 
 def uniform_offset(vertices,normals,offset):
-    # Make sure vectors are unit; Only calc. values that are in the ROI, overwise don't change
+    # Offset vertices along their normals by a given amount (e.g., to simulate dipole depth)
     temp = vertices.copy()
     #normals = np.nan_to_num(normals)
     for i in range(normals.shape[0]):
@@ -253,7 +252,7 @@ roi_vals = []
 roi_vallen = [[],[],[]]
 roi_count = [0,0,0]
 
-# Load each file
+# Load each file and merge all faces/vertices/normals into single arrays
 for i,fb in enumerate(brain_data):
     _, brain_faces, brain_vertices, brain_normals = obtain_data(brain_data[i], 'brain') # 'ans' or 'brain'
     brain_vals.append([brain_faces,brain_vertices,brain_normals])
@@ -261,7 +260,7 @@ for i,fb in enumerate(brain_data):
         brain_vallen[k].append(brain_vals[i][k].shape[0] + brain_count[k])
         brain_count[k] += brain_vals[i][k].shape[0]
 for i,fb in enumerate(roi_data):
-    _, roi_faces, roi_vertices, roi_normals = obtain_data(roi_data[i], 'auditory_roi') # 'ans' or 'roi'
+    _, roi_faces, roi_vertices, roi_normals = obtain_data(roi_data[i], roi_label[i]) # 'ans' or 'roi'
     roi_vals.append([roi_faces,roi_vertices,roi_normals])
     for k in range(3):
         roi_vallen[k].append(roi_vals[i][k].shape[0] + roi_count[k])
@@ -276,7 +275,7 @@ roi_vertices = np.empty((roi_vallen[1][-1],3))
 roi_normals = np.empty((roi_vallen[2][-1],3))
 roi_vertices_weights = np.zeros((roi_vallen[1][-1],)) # matching index weights
 
-# Merge file variables
+# Merge file variables into single arrays for brain and ROI
 for i in range(len(brain_data)): # i for each file index
     if i == 0: # first file starts from zero in lists
         brain_faces[0:brain_vallen[0][i]] = brain_vals[i][0]
@@ -291,15 +290,12 @@ for i in range(len(roi_data)): # i for each roi file
         roi_faces[0:roi_vallen[0][i]] = roi_vals[i][0]
         roi_vertices[0:roi_vallen[1][i]] = roi_vals[i][1]
         roi_normals[0:roi_vallen[2][i]] = roi_vals[i][2]
-
         roi_vertices_weights[0:roi_vallen[1][i]] = np.repeat(roi_weights[i],roi_vallen[1][i])
     else:
         roi_faces[roi_vallen[0][i-1]:roi_vallen[0][i]] = roi_vals[i][0]
         roi_vertices[roi_vallen[1][i-1]:roi_vallen[1][i]] = roi_vals[i][1]
         roi_normals[roi_vallen[2][i-1]:roi_vallen[2][i]] = roi_vals[i][2]
         roi_vertices_weights[roi_vallen[1][i-1]:roi_vallen[1][i]] += np.repeat(roi_weights[i],(roi_vallen[1][i] - roi_vallen[1][i-1]))
-
-
 
 ### Provide offset for normal locations to realistic dipole depth in cortex
 # Note: Consider using outer cortical mesh or inner mesh curvature to improve accuracy
@@ -541,23 +537,6 @@ def check_proximity(population,dev1_id,dev2_id):
     # Adjust proximity by device radii
     proximity -= (cl_wd[i1]+cl_wd[i2])/2
 
-    """ Need to fix radius adjustment
-    # Adjusted path through cylinder radius based on relative angle
-    theta_1 = np.arccos(np.dot(dev1_vec,axis)) # already normalized vectors
-    theta_2 = np.arccos(np.dot(dev2_vec,axis))
-    r1 = cl_wd[i1]/(2*np.cos(theta_1))
-    r2 = cl_wd[i2]/(2*np.cos(theta_2))
-    # Reduce proximity by radii passthrough
-    proximity -= (r1 + r2)"""
-
-    # (TO DO) Check if end points are in the solution for edge cases
-    #   may be unnecessary given reasonable device placement limitations
-    #if (closest[0] in p1) or (closest[1] in p2):
-        # Check minimum distance ALONG each device axis
-        #   if both p1/p2 end points and the dev point are a positive distance from the other device end,
-        #   then one device is 'in front of' another - take the lowest of the values
-        #   as an approximate distance WITHOUT accounting for radii
-
     if verbose:
         print(f"TEST prox - axis: {proximity} - {axis}")
 
@@ -787,6 +766,7 @@ def find_snr(devpos):
     return total
 
 def fitness_function(ga_instance, solution, solution_idx):
+    # Fitness function for genetic algorithm; uses SNR as objective
     return find_snr(solution)
 
 def on_gen(ga_instance):
@@ -1012,9 +992,10 @@ if __name__ == "__main__":
     if method == 'genetic':
         init_pop = sol_per_pop
     else:
-        init_pop = 1
+        init_pop = 50 # Starting spot test for other methods
     initial_population = np.round(generate_initial_population(recentered_roi, N, init_pop).reshape(init_pop, num_genes), 2)
     for i,p in enumerate(initial_population):
+        initial_population[i] = np.clip(initial_population[i], lower_bounds, upper_bounds) # Clip to bounds
         initial_population[i] = limit_correction(initial_population[i], coefficient=[3, 2])
     
     ### Run desired optimization
