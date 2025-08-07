@@ -610,7 +610,7 @@ def calculate_voltage(dev_id, vertices, normals, montage = Montage, inter = Fals
 
     # Zero NaN values
     opt_volt = np.nan_to_num(opt_volt)
-    snr_list = np.nan_to_num(snr_list)
+    snr_list = np.square(np.nan_to_num(snr_list))
     info_cap = np.nan_to_num(info_cap)
 
     # Scale with given weights for ROI subregions

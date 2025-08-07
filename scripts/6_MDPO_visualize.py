@@ -366,7 +366,7 @@ def calculate_voltage(fields, vertices, normals, vscale=10**6, montage = False, 
         # elif (not np.all(np.isnan(voltage[idx,:]))) and montage and inter:
 
     opt_volt *= vscale #scale it to get the list of voltages
-    snr_list = np.copy(opt_volt)/noise # get the list of snr values
+    snr_list = np.square(np.copy(opt_volt)/noise) # get the list of snr values
     info_cap = bandwidth*np.log2(1+snr_list) # get the list of information capacity
 
     # Scale with given weights for ROI subregions
@@ -413,7 +413,7 @@ colors = [[color1, color2, color3, color4, color5, color6, color7],
 
 
 # Predefined voltage and attribute bins for color mapping
-val1, val2, val3, val4, val5, val6 = 0.252, 0.533, 1.186, 2.984, 9.85, 61.8 # IC 15, 30, 60, 120, 240, (480 unused) for 2.3 uV RMS noise
+val1, val2, val3, val4, val5, val6 = 0.77, 1.1, 1.66, 2.62, 4.76, 11.9 # IC 15, 30, 60, 120, 240, (480 unused) for 2.3 uV RMS noise
 
 def infocap(val):
     """
@@ -424,7 +424,8 @@ def infocap(val):
 n_bin = [ # Voltage bins
         [np.nan, val1, val2, val3, val4, val5, val6],
          [np.nan,15,30,60,120,240,480], # Info cap bins
-         [np.nan,val1/noise,val2/noise,val3/noise,val4/noise,val5/noise,val6/noise], # SNR bins
+         [np.nan,np.square(val1/noise),np.square(val2/noise),np.square(val3/noise),
+          np.square(val4/noise),np.square(val5/noise),np.square(val6/noise)], # SNR bins
          [np.nan,30,60,90,120,150,180] # Angle bins
          ] 
 
@@ -846,16 +847,16 @@ def plot_device(vertices, normals, devices, leadfield, attribute, mont = False, 
     if save_obj_var.get():
         import os
         from datetime import datetime
-        if not os.path.exists(savedir):
-            os.makedirs(savedir)
+        if not os.path.exists(output):
+            os.makedirs(output)
         # Get current date and time for filename suffix
         now = datetime.now()
         date_str = now.strftime("%Y%m%d_%H%M")
         # Save reconstructed mesh
-        mesh_path = os.path.join(savedir, f"surface_mesh_{date_str}.obj")
+        mesh_path = os.path.join(output, f"surface_mesh_{date_str}.obj")
         o3d.io.write_triangle_mesh(mesh_path, rec_mesh)
         # Save point cloud as OBJ
-        points_path = os.path.join(savedir, f"surface_points_{date_str}.obj")
+        points_path = os.path.join(output, f"surface_points_{date_str}.obj")
         o3d.io.write_point_cloud(points_path, roi)
 
         # Save mesh with devices
@@ -865,7 +866,7 @@ def plot_device(vertices, normals, devices, leadfield, attribute, mont = False, 
             merged_mesh = rec_mesh
             for dev_mesh in device_meshes:
                 merged_mesh += dev_mesh
-            mesh_with_dev_path = os.path.join(savedir, f"surface_mesh_with_devices_{date_str}.obj")
+            mesh_with_dev_path = os.path.join(output, f"surface_mesh_with_devices_{date_str}.obj")
             o3d.io.write_triangle_mesh(mesh_with_dev_path, merged_mesh)
     # --- END OBJ EXPORT ---
 
