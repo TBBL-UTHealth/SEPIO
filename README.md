@@ -10,6 +10,12 @@ Code repo for a publication on "Optimization of electrode placement and informat
 - **Simulation**: Monte Carlo simulations for evaluating information capacity and signal-to-noise ratios (SNR).
 - **Lead Field Processing**: Utilities for importing, transforming, and analyzing lead field data.
 
+## Data
+
+Available in ZIP format on Zenodo.
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.16782866.svg)](https://doi.org/10.5281/zenodo.16782866)
+
+
 ## Scripts
 Script names are prefixed with their order of use for generating data found in the publication and explained in the diagram below.
 ![Readme drawio](https://github.com/user-attachments/assets/6171a5c6-6494-4045-89e2-f974205b3a68)

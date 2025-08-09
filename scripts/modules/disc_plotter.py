@@ -23,22 +23,6 @@ class ElectrodePlotter:
         self.num_electrodes = num_electrodes
         self.dipoles = dipoles
         self.elec_pos = np.array([
-            # [0.405, 0, 1.75],
-            # [0.405, 0, 2.25],
-            # [0.405, 0, 2.75],
-            # [0.405, 0, 3.25],
-            # [0.405, 0, 3.75],
-            # [0.405, 0, 4.25],
-            # [0.405, 0, 4.75],
-            # [0.405, 0, 5.25],
-            # [0.405, 0, 5.75],
-            # [0.405, 0, 6.25],
-            # [0.405, 0, 6.75],
-            # [0.405, 0, 7.25],
-            # [0.405, 0, 7.75],
-            # [0.405, 0, 8.25],
-            # [0.405, 0, 8.75],
-            # [0.405, 0, 9.25],
             [0.2863782464, 0.2863782464, 2],
             [0.2863782464, 0.2863782464, 2.5],
             [0.2863782464, 0.2863782464, 3],
@@ -55,22 +39,6 @@ class ElectrodePlotter:
             [0.2863782464, 0.2863782464, 8.5],
             [0.2863782464, 0.2863782464, 9],
             [0.2863782464, 0.2863782464, 9.5],
-            # [0, 0.405, 1.75],
-            # [0, 0.405, 2.25],
-            # [0, 0.405, 2.75],
-            # [0, 0.405, 3.25],
-            # [0, 0.405, 3.75],
-            # [0, 0.405, 4.25],
-            # [0, 0.405, 4.75],
-            # [0, 0.405, 5.25],
-            # [0, 0.405, 5.75],
-            # [0, 0.405, 6.25],
-            # [0, 0.405, 6.75],
-            # [0, 0.405, 7.25],
-            # [0, 0.405, 7.75],
-            # [0, 0.405, 8.25],
-            # [0, 0.405, 8.75],
-            # [0, 0.405, 9.25],
             [-0.2863782464, 0.2863782464, 2],
             [-0.2863782464, 0.2863782464, 2.5],
             [-0.2863782464, 0.2863782464, 3],
@@ -87,22 +55,6 @@ class ElectrodePlotter:
             [-0.2863782464, 0.2863782464, 8.5],
             [-0.2863782464, 0.2863782464, 9],
             [-0.2863782464, 0.2863782464, 9.5],
-            # [-0.405, 0, 1.75],
-            # [-0.405, 0, 2.25],
-            # [-0.405, 0, 2.75],
-            # [-0.405, 0, 3.25],
-            # [-0.405, 0, 3.75],
-            # [-0.405, 0, 4.25],
-            # [-0.405, 0, 4.75],
-            # [-0.405, 0, 5.25],
-            # [-0.405, 0, 5.75],
-            # [-0.405, 0, 6.25],
-            # [-0.405, 0, 6.75],
-            # [-0.405, 0, 7.25],
-            # [-0.405, 0, 7.75],
-            # [-0.405, 0, 8.25],
-            # [-0.405, 0, 8.75],
-            # [-0.405, 0, 9.25],
             [-0.2863782464, -0.2863782464, 2],
             [-0.2863782464, -0.2863782464, 2.5],
             [-0.2863782464, -0.2863782464, 3],
@@ -119,22 +71,6 @@ class ElectrodePlotter:
             [-0.2863782464, -0.2863782464, 8.5],
             [-0.2863782464, -0.2863782464, 9],
             [-0.2863782464, -0.2863782464, 9.5],
-            # [0, -0.405, 1.75],
-            # [0, -0.405, 2.25],
-            # [0, -0.405, 2.75],
-            # [0, -0.405, 3.25],
-            # [0, -0.405, 3.75],
-            # [0, -0.405, 4.25],
-            # [0, -0.405, 4.75],
-            # [0, -0.405, 5.25],
-            # [0, -0.405, 5.75],
-            # [0, -0.405, 6.25],
-            # [0, -0.405, 6.75],
-            # [0, -0.405, 7.25],
-            # [0, -0.405, 7.75],
-            # [0, -0.405, 8.25],
-            # [0, -0.405, 8.75],
-            # [0, -0.405, 9.25],
             [0.2863782464, -0.2863782464, 2],
             [0.2863782464, -0.2863782464, 2.5],
             [0.2863782464, -0.2863782464, 3],
@@ -168,22 +104,6 @@ class ElectrodePlotter:
             [0.405, 0, 8.5],
             [0.405, 0, 9],
             [0.405, 0, 9.5],
-            # [0.2863782464, 0.2863782464, 1.75],
-            # [0.2863782464, 0.2863782464, 2.25],
-            # [0.2863782464, 0.2863782464, 2.75],
-            # [0.2863782464, 0.2863782464, 3.25],
-            # [0.2863782464, 0.2863782464, 3.75],
-            # [0.2863782464, 0.2863782464, 4.25],
-            # [0.2863782464, 0.2863782464, 4.75],
-            # [0.2863782464, 0.2863782464, 5.25],
-            # [0.2863782464, 0.2863782464, 5.75],
-            # [0.2863782464, 0.2863782464, 6.25],
-            # [0.2863782464, 0.2863782464, 6.75],
-            # [0.2863782464, 0.2863782464, 7.25],
-            # [0.2863782464, 0.2863782464, 7.75],
-            # [0.2863782464, 0.2863782464, 8.25],
-            # [0.2863782464, 0.2863782464, 8.75],
-            # [0.2863782464, 0.2863782464, 9.25],
             [0, 0.405, 2],
             [0, 0.405, 2.5],
             [0, 0.405, 3],
@@ -200,22 +120,6 @@ class ElectrodePlotter:
             [0, 0.405, 8.5],
             [0, 0.405, 9],
             [0, 0.405, 9.5],
-            # [-0.2863782464, 0.2863782464, 1.75],
-            # [-0.2863782464, 0.2863782464, 2.25],
-            # [-0.2863782464, 0.2863782464, 2.75],
-            # [-0.2863782464, 0.2863782464, 3.25],
-            # [-0.2863782464, 0.2863782464, 3.75],
-            # [-0.2863782464, 0.2863782464, 4.25],
-            # [-0.2863782464, 0.2863782464, 4.75],
-            # [-0.2863782464, 0.2863782464, 5.25],
-            # [-0.2863782464, 0.2863782464, 5.75],
-            # [-0.2863782464, 0.2863782464, 6.25],
-            # [-0.2863782464, 0.2863782464, 6.75],
-            # [-0.2863782464, 0.2863782464, 7.25],
-            # [-0.2863782464, 0.2863782464, 7.75],
-            # [-0.2863782464, 0.2863782464, 8.25],
-            # [-0.2863782464, 0.2863782464, 8.75],
-            # [-0.2863782464, 0.2863782464, 9.25],
             [-0.405, 0, 2],
             [-0.405, 0, 2.5],
             [-0.405, 0, 3],
@@ -232,22 +136,6 @@ class ElectrodePlotter:
             [-0.405, 0, 8.5],
             [-0.405, 0, 9],
             [-0.405, 0, 9.5],
-            # [-0.2863782464, -0.2863782464, 1.75],
-            # [-0.2863782464, -0.2863782464, 2.25],
-            # [-0.2863782464, -0.2863782464, 2.75],
-            # [-0.2863782464, -0.2863782464, 3.25],
-            # [-0.2863782464, -0.2863782464, 3.75],
-            # [-0.2863782464, -0.2863782464, 4.25],
-            # [-0.2863782464, -0.2863782464, 4.75],
-            # [-0.2863782464, -0.2863782464, 5.25],
-            # [-0.2863782464, -0.2863782464, 5.75],
-            # [-0.2863782464, -0.2863782464, 6.25],
-            # [-0.2863782464, -0.2863782464, 6.75],
-            # [-0.2863782464, -0.2863782464, 7.25],
-            # [-0.2863782464, -0.2863782464, 7.75],
-            # [-0.2863782464, -0.2863782464, 8.25],
-            # [-0.2863782464, -0.2863782464, 8.75],
-            # [-0.2863782464, -0.2863782464, 9.25],
             [0, -0.405, 2],
             [0, -0.405, 2.5],
             [0, -0.405, 3],
@@ -263,23 +151,7 @@ class ElectrodePlotter:
             [0, -0.405, 8],
             [0, -0.405, 8.5],
             [0, -0.405, 9],
-            [0, -0.405, 9.5],
-            # [0.2863782464, -0.2863782464, 1.75],
-            # [0.2863782464, -0.2863782464, 2.25],
-            # [0.2863782464, -0.2863782464, 2.75],
-            # [0.2863782464, -0.2863782464, 3.25],
-            # [0.2863782464, -0.2863782464, 3.75],
-            # [0.2863782464, -0.2863782464, 4.25],
-            # [0.2863782464, -0.2863782464, 4.75],
-            # [0.2863782464, -0.2863782464, 5.25],
-            # [0.2863782464, -0.2863782464, 5.75],
-            # [0.2863782464, -0.2863782464, 6.25],
-            # [0.2863782464, -0.2863782464, 6.75],
-            # [0.2863782464, -0.2863782464, 7.25],
-            # [0.2863782464, -0.2863782464, 7.75],
-            # [0.2863782464, -0.2863782464, 8.25],
-            # [0.2863782464, -0.2863782464, 8.75],
-            # [0.2863782464, -0.2863782464, 9.25]
+            [0, -0.405, 9.5]
         ])
 
     def translate(self, x=0, y=0, z=0):
@@ -421,51 +293,6 @@ class ElectrodePlotter:
         ax.set(xlim=(-5, 5), ylim=(-5, 5), zlim=(10, 0))
         fig.show()
 
-    def plot_2d_top(self):
-        """
-        Deprecated.
-
-        Plots a top-down view of electrodes and dipoles.
-        """
-        electrode_ids = self.electrode_ids[:self.num_electrodes]
-
-        elec_on = self.elec_pos[electrode_ids]
-        elec_off = np.setdiff1d(np.arange(self.elec_pos.shape[0]), electrode_ids)
-
-        fig = plt.figure(figsize=(8,8))
-        ax = plt.axes()
-
-        sns.set_style("whitegrid")
-
-        cmap = LinearSegmentedColormap.from_list("black2orange", [(1,0.2,0),(.2,0,0)], N=self.num_electrodes)
-
-        for dipole in self.dipoles:
-            a = FancyArrowPatch((dipole[0][0], dipole[1][0]), 
-                (dipole[0][1], dipole[1][1]), 
-                lw=3,
-                color="b",
-                mutation_scale=10)
-            ax.add_artist(a)
-        
-        ax.scatter(
-            self.elec_pos[elec_off,0], 
-            self.elec_pos[elec_off,1],
-            alpha=0.2, 
-            s=4,
-            c="black",
-            label='off electrodes')
-
-        ax.scatter(elec_on[:,0], 
-            elec_on[:,1], 
-            s=np.arange(self.num_electrodes) / self.num_electrodes * 50 + 10,
-            c = self.num_electrodes - np.arange(self.num_electrodes),
-            cmap=cmap,
-            label='on electrodes')
-
-        plt.title(f'Enabled/Disabled DISC electrodes ({np.shape(electrode_ids)[0]} electrodes)')
-        ax.set(xlim=(-.9,.9), ylim=(-.9, .9))
-        fig.show()
-
     def plot_2d_side_combined(self):
         """
         Plots a combined view of all 128 electrodes for DISC. 
@@ -509,95 +336,6 @@ class ElectrodePlotter:
         cbar.ax.invert_yaxis()
         cbar.ax.set_title('Priority (1 = most important)', pad=12)
 
-        # plt.title(f'Enabled/Disabled DISC electrodes ({np.shape(electrode_ids)[0]} electrodes)')
-
-    def plot_2d_side(self):
-        """
-        Deprecated.
-        
-        Similar to 2D_side_combined, but does not work.
-        """
-        electrode_ids = self.electrode_ids[:self.num_electrodes]
-
-        elec_on = self.elec_pos[electrode_ids[electrode_ids < 64]]
-        elec_off = np.setdiff1d(np.arange(self.elec_pos.shape[0]), electrode_ids)
-
-        fig, ax = plt.subplots(1, 2, figsize=(6,8))
-
-        sns.set_style("whitegrid")
-
-        cmap = LinearSegmentedColormap.from_list("black2orange", [(1,0.2,0),(.2,0,0)], N=self.num_electrodes)
-
-        ax[0].scatter(
-            45 * (elec_off[elec_off < 64]//16), 
-            self.elec_pos[elec_off[elec_off < 64],2],
-            alpha=0.2, 
-            s=4*3,
-            c="black",
-            label='off electrodes',)
-
-        ax[0].scatter(
-            45 * (electrode_ids[electrode_ids < 64]//16), 
-            elec_on[:,2], 
-            s=(np.arange(self.num_electrodes)[electrode_ids < 64] / self.num_electrodes * 50 + 10)*3,
-            c = self.num_electrodes - np.arange(self.num_electrodes)[electrode_ids < 64],
-            cmap=cmap,
-            label='on electrodes',
-            vmin=1, vmax=self.num_electrodes)
-
-        ax[0].set(xlim=(-15,150), ylim=(10,1.5))
-        elec_on = self.elec_pos[electrode_ids[electrode_ids >= 64]]
-        ax[0].set_title("Electrodes 0-63 (first half)")
-
-        ax[1].scatter(
-            45 * (elec_off[elec_off >= 64]//16), 
-            self.elec_pos[elec_off[elec_off >= 64],2],
-            alpha=0.2, 
-            s=4*3,
-            c="black",
-            label='off electrodes')
-
-        sct = ax[1].scatter(
-            45 * (electrode_ids[electrode_ids >= 64]//16), 
-            elec_on[:,2], 
-            s=(np.arange(self.num_electrodes)[electrode_ids >= 64] / self.num_electrodes * 50 + 10)*3,
-            c = self.num_electrodes - np.arange(self.num_electrodes)[electrode_ids >= 64],
-            cmap=cmap,
-            label='on electrodes',
-            vmin=1, vmax=self.num_electrodes)
-
-        dipoles1 = []
-        dipoles2 = []
-        for dipole in self.dipoles:
-            if math.atan2(dipole[1][0], dipole[0][0]) >= 0:
-                dipoles1.append(np.array((math.atan2(dipole[1][0], dipole[0][0]) / math.pi * 180, dipole[2][0])))
-            else:
-                dipoles2.append(np.array((math.atan2(dipole[1][0], dipole[0][0]) / math.pi * 180 + 360, dipole[2][0])))
-        dipoles1, dipoles2 = np.array(dipoles1), np.array(dipoles2)
-        if len(dipoles1) != 0:
-            ax[0].scatter(
-                dipoles1[:,0],
-                dipoles1[:,1],
-                c="green",
-                label="dipoles"
-            )
-        if len(dipoles2) != 0:
-            ax[1].scatter(
-                dipoles2[:,0],
-                dipoles2[:,1],
-                c="green",
-                label="dipoles"
-            )
-
-        ax[1].set(xlim=(165, 330), ylim=(10,1.5))
-        ax[1].set_title("Electrodes 64-127 (second half)")
-        fig.tight_layout(pad=5.0)
-
-        cbar = fig.colorbar(sct, ax = ax, location="bottom", shrink = 0.95, aspect = 10, ticks=np.linspace(1, self.num_electrodes, 2)[::-1])
-        cbar.ax.invert_yaxis()
-        cbar.ax.set_title('Priority (1 = most important)', pad=12)
-
-        # plt.title(f'Enabled/Disabled DISC electrodes ({np.shape(electrode_ids)[0]} electrodes)')
 
 class _Arrow3D(FancyArrowPatch):
 

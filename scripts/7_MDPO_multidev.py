@@ -458,7 +458,6 @@ def adjust_depth(depthrange, position, vertices):
             # move inward if too far from brain
             dif = abs(depth-mindepth)
             position[:3] -= dif*dev_vec
-            #print(f"TEST Moving: {dif} to {mindepth}")
 
     # Check and move devices to maximum
     if not np.isnan(maxdepth):
@@ -466,7 +465,6 @@ def adjust_depth(depthrange, position, vertices):
             # move outward if too deep in brain
             dif = abs(depth-maxdepth)
             position[:3] += dif*dev_vec
-            #print(f"TEST Moving: {dif} to {maxdepth}")
 
     return position
 

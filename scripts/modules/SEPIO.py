@@ -13,26 +13,49 @@ class sepio:
 
     def mc_train(X,y,Xt,yt,sensor_div,MCcount,noise,replicates,nbasis,spatial,l1,rep_subdiv):
         """
-        Performs Monte-Carlo style SEPIO training, testing, and sorting.
+        Performs Monte-Carlo style SEPIO training, testing, and sensor sorting.
         
-        Inputs:
-        `X` (float array) is the train data in (sources,sensors) format; also generates labels.
-        (Opt.) `y` (int) is the matching labels for `X`. Not necessary if X only contains one
-            sample for each label. If provided, replicates are not made (must be made manually).
-        (Opt.) `Xt` (float array) is the test data, only defined for crossed datasets.
-        (Opt.) `yt` (int) same as `y`, but for `Xt`.
-        `sensor_div` (int) is the number of sensors to iterate at a time for test processing.
-        `MCcount` (int) is the number of total cycles to perform.
-        `noise` (float) is the standard deviation of a gaussian noise profile overlaid on datasets.
-        `replicates` (int) is the number of dataset duplication to perform for training and testing.
-            If multiple samples are provided for each label, only those are used, split for train/test.
-        (Opt.) `nbasis` (int) is the number of basis modes permitted.
-        (Opt.) `spatial` (bool) is an option to return the classification accuracy per label.
-        (Opt.) `l1` (float) allows the changing of l1 penalty for optimization.
-        rep_subdiv (int) is the number of replicates tested at a time. Lower values use less RAM and take
-            slightly longer, but very low values (~<6) may degrade results. Defaults to replicates//4.
+        This function implements the SEPIO (Sparse Sensor Placement for Intracranial Optimization)
+        algorithm which uses SSPOC (Sparse Sensor Placement Optimization for Classification) to
+        find optimal electrode placements for neural signal classification.
         
-        Returns: (Coefficients, sensor/input accuracy, spatial/label accuracy, sensor_list)
+        Parameters:
+        -----------
+        X : array_like, shape (sources, sensors)
+            Training data containing signal measurements from different sources/dipoles
+        y : array_like, optional
+            Class labels for training data X. If not provided, labels are auto-generated
+        Xt : array_like, optional
+            Test data for cross-validation, used for evaluating different datasets
+        yt : array_like, optional  
+            Test labels corresponding to Xt
+        sensor_div : int
+            Sensor increment for iterative testing (defines granularity of sensor range)
+        MCcount : int
+            Number of Monte-Carlo iterations to perform for robust statistics
+        noise : float
+            Standard deviation of Gaussian noise added to simulate realistic conditions
+        replicates : int
+            Number of data replications for augmentation (if single samples per class)
+        nbasis : int, optional
+            Number of basis functions for dimensionality reduction
+        spatial : bool, optional
+            Whether to return spatial/source-space classification accuracies
+        l1 : float, optional
+            L1 regularization parameter for SSPOC
+        rep_subdiv : int, optional
+            Number of subdivisions for replicate testing
+        
+        Returns:
+        --------
+        MCcoefs : ndarray
+            Sensor coefficients indicating electrode importance
+        MCaccs : ndarray  
+            Classification accuracies in sensor space across different sensor counts
+        MCsaccs : ndarray, optional
+            Classification accuracies in source space (if spatial=True)
+        sensor_range : ndarray
+            Array of sensor counts tested
         """
         # Maximum sensors for the dataset
         NUM_ELECTRODES = X.shape[-1]
@@ -44,7 +67,6 @@ class sepio:
         else: # Produce labels if needed
             counts = 1
             y = np.arange(X.shape[0]) # labels
-            print("TEST y:",y.shape,y)
         # Separate test set labels
         if (Xt is not None) and (yt is None):
             yt = np.arange(Xt.shape[0]) # labels
@@ -106,7 +128,6 @@ class sepio:
             if countst is None: # Same test data; no replicates
                 X_test = np.copy(X)
                 y_test = np.copy(y)
-        print("TEST y_test:",y_test.shape,y_test)
         #--- Initialize outputs ---#
         # Coefficients for sensor sorting
         if np.unique(y).shape[0] <= 2: # Only 2 labels -> (sensors,)

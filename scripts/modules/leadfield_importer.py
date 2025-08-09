@@ -95,7 +95,7 @@ class FieldImporter(FieldEvaluator):
         fields = np.stack((fields_x, fields_y, fields_z), axis=3) #x is rows, y is cols
 
         if self.fields.size:
-            self.fields = np.append(self.fields, fields, axis=4) # TODO: way to track which electrodes for which device
+            self.fields = np.append(self.fields, fields, axis=4)
         else:
             self.fields = fields
 

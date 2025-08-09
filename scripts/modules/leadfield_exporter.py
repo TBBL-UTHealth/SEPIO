@@ -148,7 +148,6 @@ class LeadFieldExporter:
 
     def set_files(self, leadfield_dir):
         """Sets the lead field top-level directory and the files list"""
-        # TODO: could add multiple directories
         self.leadfield_files = natsorted(listdir(leadfield_dir))
 
     def import_fields(self, leadfield_dir, skip_header=2):
@@ -187,7 +186,7 @@ class LeadFieldExporter:
         Type: {'numpy', 'matlab'}
         """
         
-        # DEBUG STATEMENT -> tentatively staying here
+        # Save metadata information for verification
         s= f"Saving metadata to file...\n channels={self.metadata['channels']}\ngrid_start={self.metadata['grid_start']}\ngrid_stop={self.metadata['grid_stop']}\ngrid_step={self.metadata['grid_step']})"
         print(s)
 
