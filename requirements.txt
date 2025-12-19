@@ -1,0 +1,26 @@
+# Core numerical & I/O
+numpy
+scipy
+
+# Machine learning / classification
+scikit-learn
+pysensors
+
+# Optimization
+pygad
+
+# Visualization and plotting
+matplotlib
+seaborn
+open3d
+
+# Lead field processing / utils
+natsort
+opencv-python
+
+# Optional: ANSYS AEDT export (only needed to generate new lead fields)
+# If you are not exporting from AEDT, you can skip this.
+pyaedt
+
+# Notebooks (optional, for running *.ipynb in scripts/)
+notebook

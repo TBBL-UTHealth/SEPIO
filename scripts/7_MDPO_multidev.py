@@ -1,10 +1,45 @@
-### MDPO Multi-device optimization ###
-"""
-This script is designed to optimize the placement of multiple devices in a given brain region.
-Accepts N-devices of M-types for broader application and UI integration.
-Requires input data from Brainsuite and leadfield files - provided in the data folder.
+"""MDPO Multi-device optimization.
 
-Adjustable variables end at line 103.
+This script performs multi-device placement optimization in a cortical or phantom model.
+It supports arbitrary numbers (``N``) of devices drawn from multiple device types (``M``) while enforcing
+depth, angle, and proximity constraints. Lead fields (LFs) are imported for each device
+type and used to calculate voltage, SNR, or information capacity (IC) metrics at dipole
+locations derived from Brainsuite surface meshes.
+
+Key Features
+------------
+- Flexible multi-device optimization. Any number or types of devices can be optimized simultaneously.
+- Device-specific geometric & biophysical constraints (depth, angles, proximity, montage).
+- Automatic ROI weighting for combined performance metrics.
+- Supports grid expansion for surface array devices.
+- Export of optimization results and metadata for downstream analysis/UI integration.
+
+External Dependencies
+---------------------
+- ``numpy``, ``scipy.io`` for numerical work and loading ``.mat`` mesh files.
+- ``pygad`` for the genetic algorithm implementation.
+- ``modules.leadfield_importer.FieldImporter`` for lead field loading.
+- ``pickle`` for result serialization.
+
+Primary Outputs
+---------------
+Pickled dictionary (``outputs/<timestamp>-<method>-<N>.pkl``) containing best solution,
+fitness evolution statistics, and the configuration snapshot.
+
+Usage Overview
+--------------
+1. Configure device, tissue, and optimization settings in the "Adjustable" sections.
+2. Point ``folder`` to the dataset containing Brainsuite mesh and leadfield files.
+3. Choose ``method`` (``'genetic'`` or ``'anneal'``) and performance ``measure``.
+4. Run as a script: ``python 7_MDPO_multidev.py``.
+
+Notes
+-----
+- Adjustable variables end near the top of the file (device/tissue/optimization settings).
+- Angle conventions: alpha (yaw from superior view, clockwise), beta (pitch from posterior),
+  gamma (roll from left). Device orientation vector assumed along negative z after rotation.
+- Depth corrections approximate cortical entry; refine with improved surface models as needed.
+
 """
 
 ##### Imports and Files #####
@@ -116,7 +151,10 @@ elif measure == 'snr':
 elif measure == 'ic':
     measure = 2
 else:
-    print("ERROR: Incorrect output 'measure' assignment.")
+    raise ValueError("Incorrect output 'measure' assignment. Use 'voltage', 'snr', or 'ic'.")
+
+# Use separate index variable to avoid static type ambiguity.
+measure_idx = int(measure)
 
 # Load lead fields for each device type
 field_importer = FieldImporter()
@@ -142,6 +180,21 @@ for i,n in enumerate(N_multi):
 ### Device-specific processing
 
 def field_reduce(field,count):
+    """Reduce electrode count in a lead field if required.
+
+    Parameters
+    ----------
+    field : np.ndarray
+        Lead field array shaped ``(X, Y, Z, 3, E)`` with ``E`` electrodes and ``3`` vector components.
+    count : int
+        Desired electrode count (currently supports 64 from 128, or leaves unchanged).
+
+    Returns
+    -------
+    np.ndarray | None
+        Lead field with reduced electrode dimension if a valid reduction is requested;
+        otherwise the original field. Returns ``None`` if reduction is invalid.
+    """
     # Reduce number of sensors in leadfield if needed (e.g., DiSc 128->64)
     if field.shape[-1] == 128 and count != 128:
         if count == 64:
@@ -156,17 +209,25 @@ def field_reduce(field,count):
 
 def build_grid(dev_id):
     # Function to construct more complex ECoG grids with custom instructions
-    '''
-    Inputs:
-        - points: [[x_i,y_i],...] for each electrode relative to perceived origin
-        Origin must be user defined as their point of reference measurement
-    Outputs:
-        - updated fields variable
-        Iterates the same field at different positions, expanding the total volume covered
-    Issues:
-        - Assumes a completely flat array
-        - User can potentially assign unrealistic or overlapping electrodes
-    '''
+    """Construct an expanded grid lead field for ECoG-type devices.
+
+    Parameters
+    ----------
+    dev_id : int
+        Index into global ``fields`` list specifying which device lead field to expand.
+
+    Returns
+    -------
+    np.ndarray
+        New lead field array with concatenated/translated electrode positions forming
+        the user-defined grid geometry.
+
+    Notes
+    -----
+    - Electrode relative positions are provided in ``grid_positions[dev_id]`` as ``[[x,y], ...]``.
+    - Assumes a planar grid; curvature not currently modeled.
+    - Overlap or unrealistic placement is not validated.
+    """
     # Split x and y values
     x = []
     y = []
@@ -230,18 +291,39 @@ def obtain_data(data, name):
     return header, faces, vertices, normals
 
 def uniform_offset(vertices,normals,offset):
+    """Offset vertices along their normal vectors by a scalar distance.
+
+    Used to simulate dipole depth within cortical thickness.
+
+    Parameters
+    ----------
+    vertices : np.ndarray
+        Array of vertex coordinates ``(N, 3)``.
+    normals : np.ndarray
+        Corresponding normal vectors ``(N, 3)``; NaNs or zero vectors are skipped.
+    offset : float
+        Scalar distance (same units as vertices) to shift along each valid normal.
+
+    Returns
+    -------
+    tuple
+        ``(vertices, last_index, original_vertex_copy)`` where ``vertices`` are modified in place,
+        ``last_index`` is the final altered vertex index, and ``original_vertex_copy`` is the
+        original coordinate at that index for comparison.
+    """
     # Offset vertices along their normals by a given amount (e.g., to simulate dipole depth)
     temp = vertices.copy()
     #normals = np.nan_to_num(normals)
+    k = 0  # default index in case no valid normal is found
     for i in range(normals.shape[0]):
         if not np.isnan(normals[i]).any() and np.sum(normals[i]) != 0.:
-            k = i # keep last changed value
+            k = i  # keep last changed value
             vector = normals[i] / np.linalg.norm(normals[i])
             # New normals are shifted by offset along each vector
             vertices[i] = vertices[i] + vector*offset
-    # Save last initial value for comparison
-    temp = temp[k]
-    return vertices,k,temp
+    # Save last initial value for comparison (gracefully handle all-invalid normals)
+    temp = temp[k] if normals.shape[0] > 0 else temp
+    return vertices, k, temp
 
 ### Generate arrays from Brainsuite data; MUST be done before later function definitions
 # Values to collect
@@ -342,8 +424,25 @@ def recenter(vertices, reference):
 recentered_roi, center = recenter(roi_vertices, brain_vertices) # Use center to reverse the shift for MRI coordinates on final export
 
 def get_rotmat(alpha, beta, gamma):
-    """
-    Given device position in standard form, return rotation matrix
+    """Compute 3D rotation matrix from Euler angles in device convention.
+
+    Parameters
+    ----------
+    alpha : float
+        Yaw angle (rotation about +Z) in radians.
+    beta : float
+        Pitch angle (rotation about +Y) in radians.
+    gamma : float
+        Roll angle (rotation about +X) in radians.
+
+    Returns
+    -------
+    np.ndarray
+        Combined rotation matrix ``R = Rz(alpha) * Ry(beta) * Rx(gamma)`` of shape ``(3,3)``.
+
+    Notes
+    -----
+    Angle application order matches the device placement logic used elsewhere.
     """
     # define rotation matrix 
     # (see wikipedia page what these matrices represent: 
@@ -727,7 +826,7 @@ def limit_correction(population, coefficient):
 
             # Check and correct device proximity
             if do_proximity:
-                pop = np.reshape(population[idx],shape=(device_num,6))
+                pop = population[idx].reshape(device_num,6)
                 for d1 in np.arange(device_num-1):
                     for d2 in np.arange(d1+1,device_num):
                         # d1 and d2 are device ID combinations for every possible pair; axis points to d2
@@ -736,7 +835,7 @@ def limit_correction(population, coefficient):
                             dif = cl_offset - proximity*1.1 # move devices as little as possible; *1.1 as room for error with other methods
                             pop[d1,:3] -= (dif/2)*axis # Move along the nearest proximity axis
                             pop[d2,:3] += (dif/2)*axis
-                            population[idx] = np.reshape(pop,shape=(device_num*6))
+                            population[idx] = pop.reshape(device_num*6)
 
 
     # Adjust returned value for edge case of one solution
@@ -746,9 +845,23 @@ def limit_correction(population, coefficient):
     return population
 
 def find_snr(devpos):
-    """
-    Find the total SNR generated by N devices.
-    devpos - population variables
+    """Aggregate objective value (voltage/SNR/IC) for a population solution.
+
+    Parameters
+    ----------
+    devpos : np.ndarray
+        Flattened solution vector of length ``N*6`` or shaped ``(N, 6)`` with
+        per-device ``[x, y, z, alpha, beta, gamma]`` entries in MRI coordinates.
+
+    Returns
+    -------
+    float
+        Sum across ROI of the selected performance measure (index ``measure``).
+
+    Notes
+    -----
+    - ``measure`` is pre-mapped to index: 0 voltage, 1 SNR, 2 information capacity.
+    - Uses maximum across devices per vertex before summation (competitive selection).
     """
     devpos = devpos.reshape((N, 6)) # (device_id,position values)
     all_dev_volt = np.empty([recentered_roi.shape[0], N]) # (vertices,device count)
@@ -756,7 +869,7 @@ def find_snr(devpos):
         dev_id = N_index[idx] # device type index
         dippos, dipvec, rotmat = transform_vectorspace(dev_id,recentered_roi, roi_normals, devpos[idx])
         dippos_adj, dipvec_adj = trim_data(dev_id, fields, dippos, dipvec)
-        all_dev_volt[:, idx] = calculate_voltage(dev_id, dippos_adj, dipvec_adj, montage = Montage, inter = False)[measure]
+        all_dev_volt[:, idx] = calculate_voltage(dev_id, dippos_adj, dipvec_adj, montage = Montage, inter = False)[measure_idx]
     
     voltage = np.nanmax(np.nan_to_num(all_dev_volt, nan=0), axis=1)
     total = np.nansum(voltage)
@@ -764,7 +877,22 @@ def find_snr(devpos):
     return total
 
 def fitness_function(ga_instance, solution, solution_idx):
-    # Fitness function for genetic algorithm; uses SNR as objective
+    """PyGAD fitness callback wrapping the aggregate objective.
+
+    Parameters
+    ----------
+    ga_instance : pygad.GA
+        Active GA instance (unused except for interface compliance).
+    solution : np.ndarray
+        Candidate genome (flattened device pose vector).
+    solution_idx : int
+        Index of solution within current population.
+
+    Returns
+    -------
+    float
+        Fitness score (higher is better) corresponding to ``find_snr(solution)``.
+    """
     return find_snr(solution)
 
 def on_gen(ga_instance):
@@ -839,8 +967,21 @@ def generate_initial(vertices, N, min_distance, max_iterations, learning_rate):
     return np.array(initial_pop)
 
 def generate_initial_population(recentered_roi, N, k):
-    """
-    Generate initial population containing k solutions with N devices. 
+    """Generate an initial population of distributed solutions.
+
+    Parameters
+    ----------
+    recentered_roi : np.ndarray
+        ROI vertex coordinates centered about origin (used for seed selection).
+    N : int
+        Total number of devices per solution.
+    k : int
+        Number of candidate solutions (population size) to generate.
+
+    Returns
+    -------
+    np.ndarray
+        Population array shaped ``(k, N*6)`` with device pose vectors.
     """
     result = []
     for _ in range(k):
@@ -849,8 +990,25 @@ def generate_initial_population(recentered_roi, N, k):
     return np.array(result)
 
 def mutation_func(offspring, ga_instance):
-    """
-    Adaptive mutation. 
+    """Adaptive mutation operator for GA offspring.
+
+    Strategy
+    --------
+    - Detect steady state based on last ``ss_gens`` identical best fitness values.
+    - In steady state: increase mutation rate (exploration) and decrease step size (refinement).
+    - Otherwise: moderate mutation rate with larger step size (diversification).
+
+    Parameters
+    ----------
+    offspring : np.ndarray
+        Offspring array shaped ``(P, G)`` where ``P`` is number of offspring and ``G`` genes.
+    ga_instance : pygad.GA
+        GA instance (unused except for interface consistency).
+
+    Returns
+    -------
+    np.ndarray
+        Mutated offspring array.
     """
     # increase mutation rate and decrease mutation step when reaching steady state
     if len(fitnesses) > ss_gens and len(set(fitnesses[-ss_gens:])) == 1:
@@ -871,8 +1029,26 @@ def mutation_func(offspring, ga_instance):
     return offspring 
 
 def crossover_func(parents, offspring_size, ga_instance):
-    """
-    Two points crossover at first and single point crossover after reaching steady state.
+    """Custom crossover operator switching schemes based on convergence.
+
+    Parameters
+    ----------
+    parents : np.ndarray
+        Selected parent genomes shaped ``(Psel, G)``.
+    offspring_size : tuple
+        Target offspring shape ``(Poff, G)``.
+    ga_instance : pygad.GA
+        GA instance (unused except for interface compliance).
+
+    Returns
+    -------
+    np.ndarray
+        Offspring genomes after crossover.
+
+    Notes
+    -----
+    - Before steady state: two-point crossover for diversity.
+    - After steady state: single-point crossover to refine around current basin.
     """
     offspring = []
     # single point (from PyGad)
@@ -1019,8 +1195,8 @@ if __name__ == "__main__":
             sol_per_pop=sol_per_pop,
             num_genes=num_genes,
             parent_selection_type="sss", # steady state selection 
-            crossover_type=crossover_func,
-            mutation_type=mutation_func,
+            crossover_type=crossover_func,  # type: ignore[arg-type]
+            mutation_type=mutation_func,    # type: ignore[arg-type]
             initial_population=initial_population,
             on_generation=on_gen,
             save_best_solutions=False,

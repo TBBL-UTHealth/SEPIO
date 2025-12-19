@@ -1,22 +1,58 @@
 ### MDPO: Multi-Device Placement Optimization ###
-"""
-This script is used to visualize device trajectories within the tissue of interest.
-Plots point-wise angle relative to scalp, voltage, SNR, and information capacity.
+"""MDPO Visualization and Assessment Interface
 
-Script inputs:
-- Lead field file and associated variables
-- Brain and ROI data files and recording variables
+Purpose:
+    Interactive 3D visualization of brain / ROI cortical surface data overlaid with
+    simulated sensing metrics (Voltage, SNR, Information Capacity) for user-defined
+    invasive device trajectories. Also supports an anatomical angle map (surface
+    normal relative to scalp center) independent of device placement.
 
-UI inputs:
-- Select ROI or whole brain view
-- Inflated or deflated view
-- Select Voltage, SNR, Information Capacity, or Angle
-- Color scheme selection
-- Device position values as provided by MDPO_optimize or read out from MDPO_assess
+High-Level Workflow:
+    1. Load MRI-derived surface meshes (whole brain and one or more ROIs).
+    2. Optionally merge ROI geometry into the brain mesh for centering / visualization.
+    3. Recenter geometry (default: brain center of mass) and generate cortical layers:
+       - Layer 4 approximation (dipole positions) via partial inflation.
+       - Full cortical inflation (outer surface) for optional viewing.
+    4. Accept one or more device pose specifications (x, y, z, alpha, beta, gamma).
+    5. Transform vertices into each device's local vector space, sample corresponding
+       lead field vectors, and compute per-vertex voltage, SNR, and information capacity.
+    6. Color-map the chosen attribute using predefined bins and display via Open3D.
+    7. Provide optional export of point cloud and reconstructed surface (.obj files).
 
-Demo:
-To explore the utility of this UI, set the displayed value to 'Angle', clear any devices entered, 
-and visualize with different settings to observe the cortex angle relative to scalp.
+Primary Script Inputs (file-based):
+    - Lead field .npz file (fields_file) containing 5-D array: [X, Y, Z, 3(field vec), E(electrode)].
+    - Brain surface .mat file(s) with faces, vertices, normals.
+    - ROI surface .mat file(s) with faces, vertices, normals (and optional weighting).
+
+User Interface Inputs:
+    - Region selection: ROI-only vs full brain.
+    - Inflation toggle: inner cortical surface vs inflated surface for display.
+    - Attribute selection: 'Voltage', 'SNR', 'Info.Cap.', or 'Angles'.
+    - Color mode: Smooth (muted gradient) vs Contrast (higher differentiation).
+    - Device trajectories: Enter manually or load from a pickle of prior optimization.
+    - Montage option (difference-based combination across electrodes).
+    - OBJ saving toggle for mesh and point cloud export.
+
+Key Computations:
+    - Voltage: max absolute electrode response per vertex (or montage spread).
+    - SNR: (Voltage / noise)^2 per vertex.
+    - Information Capacity: bandwidth * log2(1 + SNR).
+    - Angles: angle (degrees) between surface normal and radial position vector.
+
+Performance Notes:
+    - Poisson surface reconstruction depth kept at 8 for balance of detail vs speed.
+    - Outlier removal (statistical) applied before reconstruction to reduce artifacts.
+    - Density filtering removes the lowest ~1% Poisson vertices for cleaner surfaces.
+
+Usage Demo Suggestion:
+    Select 'Angles', clear all devices, and toggle inflation / color schemes to explore
+    anatomical orientation trends across the cortical surface.
+
+Important Constraints:
+    - No functional code is modified by documentation improvements.
+    - Coordinate units are millimeters (mm) for spatial data and microvolts (μV) for voltage.
+    - Dipole magnitudes assumed constant (magnitude variable) for simulated sensing.
+
 """
 ### Imports and Files ###
 import tkinter as tk
@@ -39,43 +75,44 @@ from modules.leadfield_importer import FieldImporter
 
 ### SELECT lead field files
 # Currently only supports one device type at a time
-device = 'SEEG'  # Options: {'DISC', 'IMEC', 'SEEG'}
-folder = r"...\SEPIO_dataset"
-fields_file = path.join(folder,'leadfields', 'SEEG_8e_500um_1500pitch.npz')
-#fields_file = path.join(folder,'leadfields', 'DISC_30mm_p2-5Sm_MacChr.npz')
-#fields_file = path.join(folder,'leadfields', 'ECoG_1mm_500umgrid.npz')
+device = 'SEEG'  # Device type identifier. Supported examples: {'DISC', 'IMEC', 'SEEG'}
+folder = r"...\SEPIO_dataset"  # Root dataset directory (user should update path).
+fields_file = path.join(folder,'leadfields', 'SEEG_8e_500um_1500pitch.npz')  # Lead field file.
+# Alternative lead field examples:
+# fields_file = path.join(folder,'leadfields', 'DISC_30mm_p2-5Sm_MacChr.npz')
+# fields_file = path.join(folder,'leadfields', 'ECoG_1mm_500umgrid.npz')
 
 # Save folder; Screenshots not implemented
-output = path.join(folder,"outputs")
+output = path.join(folder,"outputs")  # Output directory for exported OBJ assets.
 
 # Source space derived from MRI; any number of ROI files in list
 # Auditory
-roi_data = [loadmat(path.join(folder,'MDPO_data','r_broca.mat'))]
-brain_data = [loadmat(path.join(folder,'MDPO_data','brain.mat'))]
+roi_data = [loadmat(path.join(folder,'MDPO_data','r_broca.mat'))]  # List of ROI .mat datasets.
+brain_data = [loadmat(path.join(folder,'MDPO_data','brain.mat'))]  # List of whole-brain .mat datasets.
 
-brain_name = 'brain' # references file header; ans, brain
-roi_name = ['ans'] # references files header; ans, auditory_roi, left_oper, left_tris
-roi_weights = [1.] # Weights for ROI regions; len(roi_data) == len(roi_weights); ACC-dlPFC [1.,.5,.5]
-roi_include = [True] # Bool; should ROI be included when viewing whole brain
-do_weights = False # Bool
-recenter_on_brain = True # Bool; Recenter on brain; MUST be used in all standard cases
+brain_name = 'brain'  # Expected struct key inside brain .mat file (e.g., 'ans', 'brain').
+roi_name = ['ans']     # List of struct keys for each ROI .mat file.
+roi_weights = [1.]     # Per-ROI weighting factors; length must match roi_data.
+roi_include = [True]   # Whether to merge each corresponding ROI into brain surface for global view.
+do_weights = False     # Toggle: apply roi_weights scaling to computed metrics.
+recenter_on_brain = True  # If True, recenter all geometry on brain CoM; else recenter on ROI selection.
 
 # Get fields
 field_importer = FieldImporter()
-field = field_importer.load(fields_file)
-num_electrodes = np.shape(field_importer.fields)[4]
-fields = field_importer.fields
-scale = 0.5 # mm; voxel size; provided lead fields are 0.5 mm/voxel unless stated in file name
-cl_wd = 1.0 # mm diameter to clear; device may be slightly offset
+field = field_importer.load(fields_file)  # Loaded lead field data container.
+num_electrodes = np.shape(field_importer.fields)[4]  # Electrode dimension length.
+fields = field_importer.fields  # 5-D array: [x, y, z, vector(3), electrode].
+scale = 0.5  # Spatial resolution (mm per voxel). Lead fields typically at 0.5 mm.
+cl_wd = 1.0  # (Currently unused) Local clearance diameter (mm) for device volume masking.
 
 # Define tissues dipoles
 # Magnitude is 0.5e-9 (nAm) for real signals or 20e-9 (nAm) for phantom simulations
-magnitude = 0.5e-9 # nAm
-dipole_offset = 1.25 # Placement of dipole between gray/white interface (0) and gray/pial interface (1); est. from Palomero-Gallagher and Zilles 2019
-cortical_thickness = 2.5 # Estimate from Fischl and Dale 2000; used for cortex inflation
-noise = 2.7 # uV rms; typicall 2.7 uV for standard SEEG or 4.1 uV for standard DiSc
+magnitude = 0.5e-9  # Dipole magnitude (nAm) for physiologic simulation (phantom = 20e-9 nAm).
+dipole_offset = 1.25  # Relative depth factor along cortical normal from WM-GM (0) to GM-pial (1).
+cortical_thickness = 2.5  # Approximate cortical thickness (mm) used for inflation visualization.
+noise = 2.7  # RMS noise (μV). Adjust per device type (e.g., SEEG ~2.7 μV, DiSc ~4.1 μV).
 
-bandwidth = 100 # S/s; May differ between devices depending on backend recording system
+bandwidth = 100  # Sampling bandwidth (samples/s) used for information capacity calculation.
 
 ### Place devices and transform vector space for each
 # Produces dippos and dipvec for calculating voltages
@@ -99,14 +136,25 @@ midpoint = fields.shape[0]//2  # field midpoint index
 
 
 def obtain_data(data, name):
-    """
-    Extract data from a given file
-    
-    inputs: 
-        - data = data obtained by the function "loadmat".
-        - name = a string that is the name of that brain region in the filename saved in the user's computer
+    """Extract mesh components from a MATLAB-structured surface file.
 
-    output: header, faces, vertices, and normals from the provided file
+    Parameters
+    ----------
+    data : dict
+        Dictionary returned by `scipy.io.loadmat` for a brain/ROI surface.
+    name : str
+        Key inside `data` pointing to region struct: expected shape [1][0] with (faces, vertices, normals).
+
+    Returns
+    -------
+    header : bytes
+        Original MAT-file header metadata.
+    faces : np.ndarray, shape (F, 3)
+        Triangle face indices.
+    vertices : np.ndarray, shape (V, 3)
+        XYZ vertex coordinates.
+    normals : np.ndarray, shape (V, 3)
+        Per-vertex normal vectors.
     """
 
     # creating corresponding lists in python in place of matlab variables
@@ -177,15 +225,19 @@ for i in range(len(roi_data)): # i for each roi file
 
 
 def recenter(vertices, reference):
+    """Translate vertices to a coordinate system centered on a reference set.
 
-    """
-    Recenter the data
-    
-    inputs: 
-        - vertices: vertices extracted from a specific brain region
-        - reference for avg1, avg2, avg3 calculated from the reference brian region
-        
-    outputs: vertices_modified, the data in vertices, recentered based on avg1, avg2, and avg3
+    Parameters
+    ----------
+    vertices : np.ndarray, shape (N, 3)
+        Original vertex coordinates to be recentered.
+    reference : np.ndarray, shape (M, 3)
+        Reference vertex set whose mean defines the new origin.
+
+    Returns
+    -------
+    vertices_modified : np.ndarray, shape (N, 3)
+        Recentered vertex coordinates (reference CoM at (0,0,0)).
     """
 
     # find midpoint
@@ -236,6 +288,26 @@ if any(roi_include):
     del tempnorm
 
 def inflate_cortex(vertices,normals,dist):
+    """Generate an inflated cortical surface by displacing vertices along normals.
+
+    Parameters
+    ----------
+    vertices : np.ndarray, shape (N, 3)
+        Base cortical vertex coordinates.
+    normals : np.ndarray, shape (N, 3)
+        Per-vertex normal vectors.
+    dist : float
+        Distance (mm) to displace each vertex outward along its normal.
+
+    Returns
+    -------
+    inflated : np.ndarray, shape (N, 3)
+        Inflated vertex coordinates. Vertices with invalid normals become NaN rows.
+    Notes
+    -----
+    - Handles potential zero/invalid normals with defensive try/except.
+    - Requires `vertices.shape == normals.shape` for standard operation.
+    """
     # Copy and move vertices by cortical thickness along normal vectors
     inflated = np.copy(vertices)
     if vertices.shape == normals.shape:
@@ -260,15 +332,32 @@ inflated_roi = inflate_cortex(recentered_roi,roi_normals,cortical_thickness)
 
 
 def transform_vectorspace(vertices, normals, devpos):
-    """
-    Transforms the MRI space depending on the device location in order to calculate voltage
-    inputs:
-        - vertices, array of vertices wrs to the original MRI coordinates
-        - normals, array of normal vectors wrs to the original MRI coordinates
-        - devpos, manually defined device position
-    output: 
-        - dippos, shifted and rotated vertices depending on the device location
-        - dipvec, shifted and rotated normal vectors depending on the device location
+    """Transform cortical vertices and normals into a device-centered coordinate frame.
+
+    Applies translation (device origin) and Euler rotations (alpha=yaw, beta=pitch,
+    gamma=roll) to facilitate indexing into the lead field volume.
+
+    Parameters
+    ----------
+    vertices : np.ndarray, shape (N, 3)
+        Recentered cortical layer vertex positions (mm).
+    normals : np.ndarray, shape (N, 3)
+        Corresponding per-vertex normal vectors.
+    devpos : array-like, shape (6,)
+        Device pose [x, y, z, alpha(rad), beta(rad), gamma(rad)]. Position in mm, angles in radians.
+
+    Returns
+    -------
+    dippos : np.ndarray, shape (N, 3)
+        Integer voxel indices (float cast) mapped into lead field space.
+    dipvec : np.ndarray, shape (N, 3)
+        Rotated and magnitude-scaled dipole vectors (nAm).
+    rot_mat : np.ndarray, shape (3, 3)
+        Combined rotation matrix (yaw * pitch * roll).
+    Notes
+    -----
+    - Lead field grid assumed centered; X/Y shifted by half-size, Z positive downward.
+    - Spatial scaling by `1/scale` converts mm coordinates to voxel indices.
     """
 
     # initialize variables (theta and phi)
@@ -308,14 +397,26 @@ def transform_vectorspace(vertices, normals, devpos):
     return dippos, dipvec, rot_mat
 
 def trim_data(leadfield, vertices, normals):
-    """
-    Set values outside of the leadfield as nan so that it is compatible for further calculation
-    inputs:
-        - leadfield, leadfield data in the form of [x,y,z,[vx,vy,vz],e]
-        - vertices, transformed data of the vertices (dippos)
-        - normals, transformed data of the normal vectors (dipvec)
-    outputs:
-        - trimmed dippos, dipvec
+    """Mask out-of-bounds dipole positions relative to lead field extents.
+
+    Parameters
+    ----------
+    leadfield : np.ndarray
+        Lead field volume with dimensions [X, Y, Z, 3, E].
+    vertices : np.ndarray, shape (N, 3)
+        Candidate dipole voxel indices (float, already transformed).
+    normals : np.ndarray, shape (N, 3)
+        Dipole moment vectors (scaled normals).
+
+    Returns
+    -------
+    dippos : np.ndarray, shape (N, 3)
+        Dipole positions with invalid entries set to NaN.
+    dipvec : np.ndarray, shape (N, 3)
+        Unchanged dipole vectors (normal components) for valid positions.
+    Notes
+    -----
+    - Bounds check assumes cubic X/Y and double-depth Z dimension conventions.
     """
     dippos = np.copy(vertices)
     dipvec = np.copy(normals)
@@ -328,15 +429,36 @@ def trim_data(leadfield, vertices, normals):
     return dippos, dipvec
 
 def calculate_voltage(fields, vertices, normals, vscale=10**6, montage = False, inter = False):
-    """
-    Calculates voltage for each vertex
-    input: 
-        - fields, leadfield data in the form of [x,y,z,[vx,vy,vz],e]
-        - vertices, transformed and trimmed data of the vertices (dippos)
-        - normals, transformed and trimmed data of the normal vectors (dipvec)
-        - vscale, to scale it to uV
-    output: 
-        - opt_volt, a 1-D array that has the optimal voltage for each vertex
+    """Compute per-vertex sensing metrics (Voltage, SNR, Information Capacity).
+
+    Parameters
+    ----------
+    fields : np.ndarray
+        Lead field array [X, Y, Z, 3, E] containing electric field vectors per electrode.
+    vertices : np.ndarray, shape (N, 3)
+        Dipole voxel indices (NaN where invalid/out of bounds).
+    normals : np.ndarray, shape (N, 3)
+        Dipole vectors (nAm) corresponding to each vertex.
+    vscale : float, default 1e6
+        Scaling factor from Volts to microvolts (μV).
+    montage : bool, default False
+        If True, compute bipolar montage spread (max - min) instead of max |voltage|.
+    inter : bool, default False
+        Placeholder for future inter-electrode montage logic (currently unused).
+
+    Returns
+    -------
+    opt_volt : np.ndarray, shape (N,)
+        Optimal voltage per vertex (μV) based on selection rule.
+    snr_list : np.ndarray, shape (N,)
+        Signal-to-noise ratio per vertex (dimensionless, power ratio).
+    info_cap : np.ndarray, shape (N,)
+        Information capacity estimate (bits per second).
+    Notes
+    -----
+    - NaN propagation used to exclude out-of-bounds or invalid positions.
+    - SNR uses (Voltage / noise)^2 formulation.
+    - Information capacity uses Shannon-like approximation bandwidth*log2(1+SNR).
     """
     global do_weights
 
@@ -378,13 +500,23 @@ def calculate_voltage(fields, vertices, normals, vscale=10**6, montage = False, 
     return (opt_volt, snr_list, info_cap)
 
 def calculate_angle(brainvert,brainvec):
-    """
-    Calculates the relative angle of each normal to the scalp.
-    input:
-        - recentered brain vertices (centered on average CoM)
-        - brain normal vectors
-    output:
-        - angles relative to scale at each vertex, 1-D array as in opt_volt
+    """Calculate angle (degrees) between each surface normal and radial position vector.
+
+    Parameters
+    ----------
+    brainvert : np.ndarray, shape (N, 3)
+        Recentered brain or ROI vertex coordinates.
+    brainvec : np.ndarray, shape (N, 3)
+        Corresponding per-vertex normal vectors.
+
+    Returns
+    -------
+    angles : np.ndarray, shape (N,)
+        Absolute angle in degrees for each vertex; NaN handling deferred upstream.
+    Notes
+    -----
+    - Uses arccos of normalized dot product; values mapped to [0, 180].
+    - Radial reference is the vertex position vector from origin (center of mass).
     """
     angles = np.zeros((brainvert.shape[0]))
 
@@ -416,8 +548,21 @@ colors = [[color1, color2, color3, color4, color5, color6, color7],
 val1, val2, val3, val4, val5, val6 = 0.77, 1.1, 1.66, 2.62, 4.76, 11.9 # IC 15, 30, 60, 120, 240, (480 unused) for 2.3 uV RMS noise
 
 def infocap(val):
-    """
-    Modified bins for sake of visualization
+    """Helper to compute simplified information capacity bin value.
+
+    Parameters
+    ----------
+    val : float
+        Voltage-like scalar (μV) or proxy quantity.
+
+    Returns
+    -------
+    int
+        Rounded information capacity approximation (bps) for visualization binning.
+    Notes
+    -----
+    - Uses global `bandwidth` and `noise` definitions.
+    - Intended for bin labeling, not analytical precision.
     """
     return round(bandwidth*np.log2(1+val/noise))
 
@@ -430,8 +575,17 @@ n_bin = [ # Voltage bins
          ] 
 
 def hextorgb(hex):
-    """
-    Translate hex colors into rgb colors
+    """Convert a hex color string to an (R, G, B) tuple normalized to [0, 1].
+
+    Parameters
+    ----------
+    hex : str
+        Hex color code, e.g. '#AABBCC'. Leading '#' optional.
+
+    Returns
+    -------
+    tuple(float, float, float)
+        Normalized RGB components.
     """
     hex = str(hex).lstrip('#')
     rgb = tuple(int(hex[i:i+2], 16)/255 for i in (0, 2, 4))
@@ -449,8 +603,29 @@ set_color = colors[3]
 set_rgb = rgb[3]
 
 def get_color_list(data, attri = "Voltage", color = set_color, rgb0 = set_rgb):
-    """
-    Get the list of colors for visualization based on the bins the data lies in, and the inquired attribute
+    """Map numeric data values to categorical color bins for visualization.
+
+    Parameters
+    ----------
+    data : np.ndarray, shape (N,)
+        Scalar metric values (Voltage, SNR, Info.Cap., or Angles).
+    attri : str, default 'Voltage'
+        Attribute key selecting bin thresholds: {'Voltage','SNR','Info.Cap.','Angles'}.
+    color : list[str]
+        List of hex color codes for the chosen palette.
+    rgb0 : list[tuple]
+        Corresponding normalized RGB tuples.
+
+    Returns
+    -------
+    color_list : list[str]
+        Hex color per data point (NaN mapped to first entry).
+    rgblist : list[tuple(float,float,float)]
+        RGB color per data point suitable for Open3D.
+    Notes
+    -----
+    - Bin thresholds sourced from global `n_bin` definition.
+    - Angle mapping reverses order to emphasize anatomical orientation gradient.
     """
     global n_bin
     data = np.abs(np.copy(data))
@@ -497,9 +672,21 @@ def get_color_list(data, attri = "Voltage", color = set_color, rgb0 = set_rgb):
     return color_list, rgblist
 
 def legend(attribute):
-    """
-    To print the legend (because open3d doesn't)
-    Uses matplotlib to display color bins for the selected attribute.
+    """Render a matplotlib legend window showing color bin ranges for selected attribute.
+
+    Parameters
+    ----------
+    attribute : str
+        One of {'Voltage','SNR','Info.Cap.','Angles'} determining bin labels and units.
+
+    Returns
+    -------
+    None
+        Displays a blocking matplotlib window; user must close to proceed.
+    Notes
+    -----
+    - Open3D does not natively provide legends; this compensates with static patches.
+    - Numerical bins rounded for clearer reading (decimals context-dependent).
     """
     global colors, n_bin, set_rgb,set_color
 
@@ -748,16 +935,36 @@ choice_frame.columnconfigure(0, weight=1)
 
 # Function to plot the output after all inputs so that variables appear in order
 def plot_device(vertices, normals, devices, leadfield, attribute, mont = False, inte = False, inflate=False):
-    """
-    Plot vertices and devices using the open3d library for a better view of the 3d space (better rendering)
-    Note special case for plotting normal angles at vertices
-    inputs:
-        - vertices: 2-d array of vertex points of the brain surface
-        - normals: 2-d array of vertex normals
-        - devices: an array of arrays indicating a list of devices and their position + orientations
-        - leadfield: the leadfield array in form of [x, y, z, [vx, vy, vz], e]
-        - attribute: a string indicating the desired attribute to calculate (voltage, snr, or infocap)
-    output: a plot indicating the voltage sensed by the devices based on location & orientation.
+    """Generate 3D visualization of sensing metrics or angle map with device geometry.
+
+    Parameters
+    ----------
+    vertices : np.ndarray, shape (N, 3)
+        Vertex coordinates (layer 4 or ROI/brain selection).
+    normals : np.ndarray, shape (N, 3)
+        Per-vertex normal vectors used for dipole orientation.
+    devices : np.ndarray, shape (D, 6)
+        Device pose specifications. If empty and attribute=='Angles', angle map only.
+    leadfield : np.ndarray
+        Lead field volume [X, Y, Z, 3, E].
+    attribute : str
+        Metric to visualize: 'Voltage', 'SNR', 'Info.Cap.', or 'Angles'.
+    mont : bool, default False
+        Apply montage (spread) computation instead of per-electrode max magnitude.
+    inte : bool, default False
+        Placeholder flag for future interactive montage extensions.
+    inflate : bool, default False
+        If True, use inflated cortical surface; else inner surface for point cloud.
+
+    Returns
+    -------
+    None
+        Opens an Open3D window with colored surface and device meshes.
+    Notes
+    -----
+    - Performs Poisson reconstruction on filtered point cloud for smoother surface display.
+    - Exports OBJ assets when `save_obj_var` is set.
+    - Angles attribute bypasses dipole & lead field computation.
     """
     global set_color, set_rgb, infl_vertices, inner_vertices
 
@@ -885,16 +1092,23 @@ def plot_device(vertices, normals, devices, leadfield, attribute, mont = False, 
 
 # clear all device positions
 def reset_dev():
-    """
-    Clears all device positions from the list.
-    """
+    """Clear all accumulated device positions (in-place list mutation)."""
     global device_pos
     device_pos=[]
 
 
 def combine_funcs(*funcs): 
-    """
-    Utility to combine multiple functions into a single callback.
+    """Compose multiple no-argument callbacks into a single function for UI binding.
+
+    Parameters
+    ----------
+    *funcs : callable
+        Arbitrary sequence of functions to execute serially.
+
+    Returns
+    -------
+    inner_combined_func : callable
+        Function executing all provided callables in order.
     """
     def inner_combined_func(*args, **kwargs): 
         for f in funcs: 
@@ -909,9 +1123,7 @@ def combine_funcs(*funcs):
 
 # change the device location display
 def change_dev_location():
-    """
-    Updates the label showing current device positions.
-    """
+    """Refresh UI label to reflect current `device_pos` contents."""
     change = "Current Location: "+str(device_pos)
     current_devices.configure(text=change)
 
@@ -922,8 +1134,17 @@ resetting.grid(row=0,column=0)
 
 # Safe float load from entry fields
 def try_float(val):
-    """
-    Attempts to convert a string to float, returns None if invalid.
+    """Safely parse a string to float.
+
+    Parameters
+    ----------
+    val : str
+        Input string from UI entry widget.
+
+    Returns
+    -------
+    float | None
+        Parsed float value if successful; otherwise None and prints warning.
     """
     try:
         float_val = float(val)
@@ -933,8 +1154,12 @@ def try_float(val):
 
 # add new device position based on the values entered in the window
 def collect_devpos():
-    """
-    Collects device position and orientation from entry fields and appends to device_pos.
+    """Append a new device trajectory to `device_pos` from current UI entry field values.
+
+    Notes
+    -----
+    - Angle fields expected in degrees in the UI; converted to radians internally.
+    - Uses `try_float` for defensive parsing; invalid entries produce None values.
     """
     x = try_float(xpos.get())
     y = try_float(ypos.get())
@@ -952,9 +1177,7 @@ add_device.grid(row=0,column=1)
 
 # delete the device last added to the list
 def undo_adding():
-    """
-    Removes the last device position from the list.
-    """
+    """Remove the most recently added device position (LIFO) if present."""
     global device_pos
     if len(device_pos)<=0:
         pass
@@ -982,9 +1205,11 @@ montage.pack()
 
 # run the program
 def run_program():
-    """
-    Main callback to generate the visualization map.
-    Checks for device positions and calls legend and plot functions.
+    """UI callback to validate device presence (unless Angles) and trigger plot + legend.
+
+    Behavior:
+        - If attribute != 'Angles' and no devices defined, displays error dialog.
+        - Otherwise renders matplotlib legend then Open3D visualization.
     """
     global vertices, normals, device_pos, fields, variable
     if (len(device_pos)<=0) & (variable.get()!="Angles"):
